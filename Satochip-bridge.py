@@ -1,7 +1,8 @@
 import hashlib
 import json
 import threading
-
+import time
+ 
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 from os import urandom
 
@@ -13,10 +14,10 @@ from ecc import ECPubkey
 from Satochip2FA import Satochip2FA
 from Client import Client, HandlerTxt, HandlerSimpleGUI
 
-from smartcard.sw.SWExceptions import SWException
-from smartcard.Exceptions import CardConnectionException, CardRequestTimeoutException
-from smartcard.CardType import AnyCardType
-from smartcard.CardRequest import CardRequest
+# from smartcard.sw.SWExceptions import SWException
+# from smartcard.Exceptions import CardConnectionException, CardRequestTimeoutException
+# from smartcard.CardType import AnyCardType
+# from smartcard.CardRequest import CardRequest
 
 #debug
 from eth_keys import keys
@@ -119,13 +120,15 @@ class SatochipBridge(WebSocket):
                     
                     #do challenge-response with 2FA device...
                     #print('2FA request sent! Approve or reject request on your second device.')
-                    cc.client.handler.show_message('2FA request sent! Approve or reject request on your second device.')
+                    #cc.client.handler.show_message('2FA request sent! Approve or reject request on your second device.')
+                    notif= '2FA request sent! Approve or reject request on your second device.'
+                    cc.client.request('show_message', notif)
                     Satochip2FA.do_challenge_response(d)
                     # decrypt and parse reply to extract challenge response
                     try: 
                         reply_encrypt= d['reply_encrypt']
                     except Exception as e:
-                        print("No response received from 2FA.\nPlease ensure that the Satochip-2FA plugin is enabled in Tools>Optional Features", True)
+                        cc.client.request('show_message', "No response received from 2FA...")
                     reply_decrypt= cc.card_crypt_transaction_2FA(reply_encrypt, False)
                     print("challenge:response= "+ reply_decrypt)
                     reply_decrypt= reply_decrypt.split(":")
@@ -220,14 +223,16 @@ class SatochipBridge(WebSocket):
         # https://github.com/arantes555/electron-fetch/issues/16
         # https://github.com/electron/electron/issues/7931
         # https://github.com/skevy/graphiql-app/pull/66/files
-        print(str(type(origin_header))) # BUG!!!!
+        print(str(type(origin_header))) 
         if origin_header:
-            print("CHECK: origin_header:"+str(origin_header)) # BUG!!!!
+            print("CHECK: origin_header:"+str(origin_header)) 
         print("CHECK HOST: "+str(type(self.address))+" "+str(self.address))
-        is_approved= cc.client.handler.yes_no_question("A new device wants to connect to Satochip:"+
+        msg= ("A new device wants to connect to Satochip:"+
                                                     "\nOrigin: "+ str(origin_header)+
                                                     "\nAddress:"+ str(self.address)+
                                                     "\n\nApprove connection?")
+        #is_approved= cc.client.handler.yes_no_question(msg)
+        is_approved= cc.client.request('yes_no_question', msg)
         if not is_approved:
             print("Connection to Satochip was rejected!")
             self.handleClose()
@@ -252,8 +257,8 @@ class SatochipBridge(WebSocket):
         print(self.address, 'closed')
 
 
-
-cc.card_init_connect()
+#debug
+#cc.card_init_connect()
 #cc.client.handler.seed_wizard()
 #cc.client.handler.QRDialog(20*"00", None, "Satochip-Bridge: QR Code", True, "2FA: ")
 #cc.client.handler.choose_seed_action()
@@ -263,26 +268,16 @@ cc.card_init_connect()
 #cc.client.handler.confirm_passphrase()
 
 def my_threaded_func(server):
-    print("Launching server!")
+    #time.sleep(10) # delay server until system tray is ready
     server.serveforever()
-    print("Done!")
+    
 
-# def my_threaded_func(cc):
-    # print("Running system tray!")
-    # cc.client.handler.system_tray()
-    # print("Done!")
-# # start system tray in thread
-# thread = threading.Thread(target=my_threaded_func, args=(cc,))
-# thread.start()
-# print("System tray launched!")
-
-
+print("Launching server!")
 server = SimpleWebSocketServer('', 8000, SatochipBridge)
-#server.serveforever()
-# start server in thread
 thread = threading.Thread(target=my_threaded_func, args=(server,))
 thread.start()
 print("Server launched!")
 
-# print("Running system tray!")
-cc.client.handler.system_tray()
+print("Running system tray!")
+cc.client.create_system_tray(cc.card_present)
+

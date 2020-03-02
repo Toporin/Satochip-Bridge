@@ -58,21 +58,26 @@ class RemovalObserver(CardObserver):
     when cards are inserted/removed from the system and
     prints the list of cards
     """
-    def __init__(self, parent):
-        self.parent=parent
+    def __init__(self, cc):
+        self.cc=cc
 
     def update(self, observable, actions):
         (addedcards, removedcards) = actions
         for card in addedcards:
             print("+Inserted: ", toHexString(card.atr))
-            if self.parent.client and self.parent.client.handler:
-                self.parent.client.handler.update_status(True)
+            if self.cc.client and self.cc.client.handler:
+                #self.cc.client.handler.update_status(True)
+                self.cc.client.request('update_status',True)
+                self.cc.card_present= True
+                # TODO: select() and get_status()?
         for card in removedcards:
             print("-Removed: ", toHexString(card.atr))
-            self.parent.pin= None #reset PIN
-            self.parent.pin_nbr= None
-            if self.parent.client and self.parent.client.handler:
-                self.parent.client.handler.update_status(False)
+            self.cc.pin= None #reset PIN
+            self.cc.pin_nbr= None
+            if self.cc.client and self.cc.client.handler:
+                #self.cc.client.handler.update_status(False)
+                self.cc.client.request('update_status',False)
+                self.cc.card_present= False
 
 class CardConnector:
 
@@ -83,6 +88,7 @@ class CardConnector:
     # v0.7: add 2-Factor-Authentication (2FA) support
     # v0.8: support seed reset and pin change
     # v0.9: patch message signing for alts
+    # v0.10: sign tx hash
     SATOCHIP_PROTOCOL_MAJOR_VERSION=0
     SATOCHIP_PROTOCOL_MINOR_VERSION=9
 
@@ -94,8 +100,13 @@ class CardConnector:
         #print("** client", client, " ** handler", client.handler)
         self.parser=parser
         self.client=client
-        self.cardtype = AnyCardType()
+        self.client.cc=self
+        self.cardtype = AnyCardType() #TODO: specify satochip cards to ignore connection to wrong card types?
         self.needs_2FA = None
+        self.card_present= False
+        # cache PIN
+        self.pin_nbr=None
+        self.pin=None
         try:
             # request card insertion
             self.cardrequest = CardRequest(timeout=10, cardType=self.cardtype)
@@ -109,9 +120,7 @@ class CardConnector:
             self.cardmonitor.addObserver(self.cardobserver)
             # connect to the card and perform a few transmits
             self.cardservice.connection.connect()
-            # cache PIN
-            self.pin_nbr=None
-            self.pin=None
+
         except CardRequestTimeoutException:
             print('time-out: no card inserted during last 10s')
         except Exception as exc:
@@ -644,7 +653,9 @@ class CardConnector:
                     msg = "WARNING: ONLY ONE ATTEMPT REMAINING! Enter the PIN for your Satochip: "
                 else:
                     msg = 'Enter the PIN for your Satochip: '
-                (is_PIN, pin_0)= self.client.PIN_dialog(msg)          
+                (is_PIN, pin_0)= self.client.PIN_dialog(msg)
+                if not is_PIN:
+                    raise RuntimeError(('Device cannot be unlocked without PIN code!'))
                 pin_0=list(pin_0)
             else:
                 pin_0= self.pin
@@ -659,12 +670,12 @@ class CardConnector:
                 self.set_pin(0, None) #reset cached PIN value
                 pin_left= d.get("PIN0_remaining_tries",-1)-1
                 msg = ("Wrong PIN! {} tries remaining!").format(pin_left)
-                self.client.handler.show_error(msg)
-                #print(msg) # TODO: gui
+                #self.client.handler.show_error(msg)
+                self.client.request('show_error', msg)
             elif sw1==0x9c and sw2==0x0c:
                 msg = ("Too many failed attempts! Your Satochip has been blocked! You need your PUK code to unblock it.")
-                self.client.handler.show_error(msg)
-                #print(msg) # TODO: gui
+                #self.client.handler.show_error(msg)
+                self.client.request('show_error', msg)
                 raise RuntimeError('Device blocked with error code:'+hex(sw1)+' '+hex(sw2))
 
     def set_pin(self, pin_nbr, pin):
@@ -722,7 +733,8 @@ class CardConnector:
                     msg=(('The version of your Satochip is higher than supported by Electrum. You should update Electrum to ensure correct functioning!')+ '\n' 
                                 + f'    Satochip version: {status["protocol_major_version"]}.{status["protocol_minor_version"]}' + '\n' 
                                 + f'    Supported version: {CardConnector.SATOCHIP_PROTOCOL_MAJOR_VERSION}.{CardConnector.SATOCHIP_PROTOCOL_MINOR_VERSION}')
-                    self.client.handler.show_message(msg)
+                    #self.client.handler.show_message(msg)
+                    self.client.request('show_message', msg)
                 break
             # setup device (done only once)
             elif (sw1==0x9c and sw2==0x04):
@@ -768,37 +780,46 @@ class CardConnector:
             authentikey=self.card_bip32_get_authentikey()
         except UninitializedSeedError:
             # Option: setup 2-Factor-Authentication (2FA)
-            if not self.needs_2FA:
-                use_2FA=self.client.handler.yes_no_question(MSG_USE_2FA)
-                if (use_2FA):
-                    secret_2FA= urandom(20)
-                    secret_2FA_hex=secret_2FA.hex()
-                    amount_limit= 0 # i.e. always use 
-                    try:
-                        # the secret must be shared with the second factor app (eg on a smartphone)
-                        msg= 'Scan this QR code on your second device \nand securely save a backup of his 2FA-secret: \n'+secret_2FA_hex
-                        (event, values)= self.client.handler.QRDialog(secret_2FA_hex, None, "Satochip-Bridge: QR Code", True, msg)
-                        if event=='Ok':
-                            # further communications will require an id and an encryption key (for privacy). 
-                            # Both are derived from the secret_2FA using a one-way function inside the Satochip
-                            (response, sw1, sw2)=self.card_set_2FA_key(secret_2FA, amount_limit)
-                            if sw1!=0x90 or sw2!=0x00:                 
-                                print("[satochip] SatochipPlugin: setup_device(): unable to set 2FA!  sw12="+hex(sw1)+" "+hex(sw2))#debugSatochip
-                                raise RuntimeError('Unable to setup 2FA with error code:'+hex(sw1)+' '+hex(sw2))
-                        else: # Cancel
-                            self.client.handler.show_message("2FA activation canceled!")
-                    except Exception as e:
-                        print("[satochip] SatochipPlugin: setup_device(): setup 2FA: "+str(e))
+            self.init_2FA()
                     
             # seed dialog...
             print(f"[SatochipPlugin] setup_device(): import seed") #debugSatochip
-            (mnemonic, passphrase, seed)= self.client.handler.seed_wizard()                    
+            (mnemonic, passphrase, seed)= self.client.seed_wizard()                    
             seed= list(seed)
             authentikey= self.card_bip32_import_seed(seed)
         hex_authentikey= authentikey.get_public_key_hex(compressed=True)
         print(f"[SatochipPlugin] setup_device(): authentikey={hex_authentikey}")#debugSatochip
         #return something?
-
+        
+    def init_2FA(self):
+        if (self.needs_2FA==None):
+            (response, sw1, sw2, d)=self.client.cc.card_get_status()
+               
+        if not self.needs_2FA:
+            use_2FA=self.client.request('yes_no_question', MSG_USE_2FA)
+            if (use_2FA):
+                secret_2FA= urandom(20)
+                secret_2FA_hex=secret_2FA.hex()
+                amount_limit= 0 # i.e. always use 
+                try:
+                    # the secret must be shared with the second factor app (eg on a smartphone)
+                    msg= 'Scan this QR code on your second device \nand securely save a backup of his 2FA-secret: \n'+secret_2FA_hex
+                    (event, values)= self.client.request('QRDialog', secret_2FA_hex, None, "Satochip-Bridge: QR Code", True, msg)
+                    if event=='Ok':
+                        # further communications will require an id and an encryption key (for privacy). 
+                        # Both are derived from the secret_2FA using a one-way function inside the Satochip
+                        (response, sw1, sw2)=self.card_set_2FA_key(secret_2FA, amount_limit)
+                        if sw1!=0x90 or sw2!=0x00:                 
+                            print("[satochip] SatochipPlugin: setup_device(): unable to set 2FA!  sw12="+hex(sw1)+" "+hex(sw2))#debugSatochip
+                            self.client.request('show_error', 'Unable to setup 2FA with error code:'+hex(sw1)+' '+hex(sw2))
+                            #raise RuntimeError('Unable to setup 2FA with error code:'+hex(sw1)+' '+hex(sw2))
+                    else: # Cancel
+                        self.client.request('show_message', '2FA activation canceled!')
+                except Exception as e:
+                    print("Exception during 2FA activation: "+str(e))    
+        else:
+            self.client.request('show_message', '2FA is already activated!')
+    
 class AuthenticationError(Exception):
     """Raised when the command requires authentication first"""
     pass
