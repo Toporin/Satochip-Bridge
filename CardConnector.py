@@ -52,7 +52,7 @@ class LogCardConnectionObserver(CardConnectionObserver):
             else:
                 print('< ', toHexString(ccevent.args[0]), "%-2X %-2X" % tuple(ccevent.args[-2:]))
 
-# a simple card observer that detects inserted/removed cards
+# a card observer that detects inserted/removed cards and initiate connection
 class RemovalObserver(CardObserver):
     """A simple card observer that is notified
     when cards are inserted/removed from the system and
@@ -60,24 +60,41 @@ class RemovalObserver(CardObserver):
     """
     def __init__(self, cc):
         self.cc=cc
-
+        self.observer = LogCardConnectionObserver() #ConsoleCardConnectionObserver()
+            
     def update(self, observable, actions):
         (addedcards, removedcards) = actions
         for card in addedcards:
+            #TODO check ATR and check if more than 1 card?
             print("+Inserted: ", toHexString(card.atr))
-            if self.cc.client and self.cc.client.handler:
-                #self.cc.client.handler.update_status(True)
-                self.cc.client.request('update_status',True)
-                self.cc.card_present= True
-                # TODO: select() and get_status()?
+            self.cc.card_present= True
+            self.cc.cardservice= card
+            self.cc.cardservice.connection = card.createConnection()
+            self.cc.cardservice.connection.connect()
+            self.cc.cardservice.connection.addObserver(self.observer)
+            try:
+                (response, sw1, sw2) = self.cc.card_select()
+                if sw1!=0x90 or sw2!=0x00:
+                    self.cc.card_disconnect()
+                    break
+                (response, sw1, sw2, status)= self.cc.card_get_status()
+                if (sw1!=0x90 or sw2!=0x00) and (sw1!=0x9C or sw2!=0x04):
+                    self.cc.card_disconnect()
+                    break
+            except Exception as exc:
+                print("Error during connection:", repr(exc))
+            if self.cc.client:
+                self.cc.client.request('update_status',True)                
+                
         for card in removedcards:
             print("-Removed: ", toHexString(card.atr))
-            self.cc.pin= None #reset PIN
-            self.cc.pin_nbr= None
-            if self.cc.client and self.cc.client.handler:
-                #self.cc.client.handler.update_status(False)
-                self.cc.client.request('update_status',False)
-                self.cc.card_present= False
+            self.cc.card_disconnect()
+            # self.cc.card_present= False
+            # self.cc.pin= None #reset PIN
+            # self.cc.pin_nbr= None
+            # if self.cc.client:
+                # self.cc.client.request('update_status',False)
+                
 
 class CardConnector:
 
@@ -90,92 +107,75 @@ class CardConnector:
     # v0.9: patch message signing for alts
     # v0.10: sign tx hash
     SATOCHIP_PROTOCOL_MAJOR_VERSION=0
-    SATOCHIP_PROTOCOL_MINOR_VERSION=9
+    SATOCHIP_PROTOCOL_MINOR_VERSION=10
 
     # define the apdus used in this script
     BYTE_AID= [0x53,0x61,0x74,0x6f,0x43,0x68,0x69,0x70] #SatoChip
 
     def __init__(self, parser, client=None):
-        # request any card type
-        #print("** client", client, " ** handler", client.handler)
         self.parser=parser
         self.client=client
         self.client.cc=self
-        self.cardtype = AnyCardType() #TODO: specify satochip cards to ignore connection to wrong card types?
+        self.cardtype = AnyCardType() #TODO: specify ATR to ignore connection to wrong card types?
         self.needs_2FA = None
-        self.card_present= False
+        self.is_seeded= None
         # cache PIN
         self.pin_nbr=None
         self.pin=None
+        # cardservice
+        self.cardservice= None #will be instantiated when a card is inserted
         try:
-            # request card insertion
-            self.cardrequest = CardRequest(timeout=10, cardType=self.cardtype)
+            self.cardrequest = CardRequest(timeout=0, cardType=self.cardtype)
             self.cardservice = self.cardrequest.waitforcard()
-            # attach the console tracer
-            self.observer = LogCardConnectionObserver() #ConsoleCardConnectionObserver()
-            self.cardservice.connection.addObserver(self.observer)
-            # attach the card removal observer
-            self.cardmonitor = CardMonitor()
-            self.cardobserver = RemovalObserver(self)
-            self.cardmonitor.addObserver(self.cardobserver)
-            # connect to the card and perform a few transmits
-            self.cardservice.connection.connect()
-
+            self.card_present= True
         except CardRequestTimeoutException:
-            print('time-out: no card inserted during last 10s')
-        except Exception as exc:
-            print("Error during connection:", repr(exc), traceback.format_exc())
-
+            self.card_present= False
+        # monitor if a card is inserted or removed
+        self.cardmonitor = CardMonitor()
+        self.cardobserver = RemovalObserver(self)
+        self.cardmonitor.addObserver(self.cardobserver)
+        
     def card_transmit(self, apdu):
-        try:
-            (response, sw1, sw2) = self.cardservice.connection.transmit(apdu)
-            if (sw1==0x9C) and (sw2==0x06):
-                (response, sw1, sw2)= self.card_verify_PIN()
-                (response, sw1, sw2)= self.cardservice.connection.transmit(apdu)
-            return (response, sw1, sw2)
-        except CardConnectionException:
-            # maybe the card has been removed
+        if self.card_present:
             try:
-                self.cardrequest = CardRequest(timeout=10, cardType=self.cardtype)
-                self.cardservice = self.cardrequest.waitforcard()
-                # attach the console tracer
-                self.observer = LogCardConnectionObserver()#ConsoleCardConnectionObserver()
-                self.cardservice.connection.addObserver(self.observer)
-                # connect to the card and perform a few transmits
-                self.cardservice.connection.connect()
-                # retransmit apdu
                 (response, sw1, sw2) = self.cardservice.connection.transmit(apdu)
                 if (sw1==0x9C) and (sw2==0x06):
                     (response, sw1, sw2)= self.card_verify_PIN()
                     (response, sw1, sw2)= self.cardservice.connection.transmit(apdu)
                 return (response, sw1, sw2)
-            except CardRequestTimeoutException:
-                print('time-out: no card inserted during last 10s')
             except Exception as exc:
                 print("Error during connection:", repr(exc), traceback.format_exc())
-
+                self.client.request('show_error',"Error during connection:"+repr(exc))
+                return ([], 0x00, 0x00)
+        else:
+            self.client.request('show_error','No Satochip found! Please insert card!')
+            return ([], 0x00, 0x00)
+            #TODO return errror or throw exception?
+            
     def card_get_ATR(self):
-        print('In CardConnector card_get_ATR()')
+        print('[CardConnector] card_get_ATR()')
         return self.cardservice.connection.getATR()
-
+    
     def card_disconnect(self):
-        print('In CardConnector card_disconnect()')
-        #debug
-        #self.cardmonitor.deleteObserver(self.cardobserver)
-        #self.cardservice.connection.disconnect()
-        #debug
-        print("-"*60)
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        traceback.print_exception(exc_type, exc_value, exc_traceback, limit=2, file=sys.stdout)
-        print("-"*60)
-
+        print('[CardConnector] card_disconnect()')
+        self.pin= None #reset PIN
+        self.pin_nbr= None
+        self.is_seeded= None
+        self.needs_2FA = None
+        self.card_present= False
+        if self.cardservice:
+            self.cardservice.connection.disconnect()
+            self.cardservice= None
+        if self.client:
+            self.client.request('update_status',False)
+        
     def get_sw12(self, sw1, sw2):
         return 16*sw1+sw2
 
     def card_select(self):
+        print("[CardConnector] card_select")#debug
         SELECT = [0x00, 0xA4, 0x04, 0x00, 0x08]
         apdu = SELECT + CardConnector.BYTE_AID
-        print("card_select")#debug
         (response, sw1, sw2) = self.card_transmit(apdu)
         return (response, sw1, sw2)
 
@@ -201,6 +201,8 @@ class CardConnector:
                 self.needs_2FA= d["needs2FA"]= False #default value
             if len(response) >=9:
                 self.needs_2FA= d["needs2FA"]= False if response[8]==0X00 else True
+            if len(response) >=10:
+                self.is_seeded= d["is_seeded"]= False if response[9]==0X00 else True
 
         return (response, sw1, sw2, d)
 
@@ -259,8 +261,10 @@ class CardConnector:
         # send apdu (contains sensitive data!)
         response, sw1, sw2 = self.card_transmit(apdu)
         # compute authentikey pubkey and send to chip for future use
+        authentikey= None
         if (sw1==0x90) and (sw2==0x00):
             authentikey= self.card_bip32_set_authentikey_pubkey(response)
+            self.is_seeded= True
         return authentikey
 
     def card_reset_seed(self, pin, hmac=[]):
@@ -272,6 +276,8 @@ class CardConnector:
         apdu=[cla, ins, p1, p2, le]+pin+hmac
 
         response, sw1, sw2 = self.card_transmit(apdu)
+        if (sw1==0x90) and (sw2==0x00):
+            self.is_seeded= False
         return (response, sw1, sw2)
 
     def card_bip32_get_authentikey(self):
@@ -291,8 +297,10 @@ class CardConnector:
             print("card_bip32_get_authentikey(): Satochip is not initialized => Raising error!")
             raise UninitializedSeedError('Satochip is not initialized! You should create a new wallet!\n\n'+MSG_WARNING)
         # compute corresponding pubkey and send to chip for future use
+        authentikey= None
         if (sw1==0x90) and (sw2==0x00):
             authentikey = self.card_bip32_set_authentikey_pubkey(response)
+            self.is_seeded=True
         return authentikey
 
     ''' Allows to compute coordy of authentikey externally to optimize computation time-out
@@ -304,13 +312,13 @@ class CardConnector:
         p2= 0x00
 
         authentikey= self.parser.parse_bip32_get_authentikey(response)
-        coordy= authentikey.get_public_key_bytes(compressed=False)
-        coordy= list(coordy[33:])
-        data= response + [len(coordy)&0xFF00, len(coordy)&0x00FF] + coordy
-        le= len(data)
-        apdu=[cla, ins, p1, p2, le]+data
-
-        (response, sw1, sw2) = self.card_transmit(apdu)
+        if authentikey:
+            coordy= authentikey.get_public_key_bytes(compressed=False)
+            coordy= list(coordy[33:])
+            data= response + [len(coordy)&0xFF00, len(coordy)&0x00FF] + coordy
+            le= len(data)
+            apdu=[cla, ins, p1, p2, le]+data
+            (response, sw1, sw2) = self.card_transmit(apdu)
         return authentikey
 
     def card_bip32_get_extendedkey(self, path):
@@ -520,6 +528,8 @@ class CardConnector:
 
         # send apdu (contains sensitive data!)
         (response, sw1, sw2) = self.card_transmit(apdu)
+        if (sw1==0x90) and (sw2==0x00):
+            self.needs_2FA= True
         return (response, sw1, sw2)
 
     def card_reset_2FA_key(self, chalresponse):
@@ -531,10 +541,11 @@ class CardConnector:
         apdu=[cla, ins, p1, p2, le]
         apdu+= chalresponse
 
-        # send apdu (contains sensitive data!)
+        # send apdu 
         (response, sw1, sw2) = self.card_transmit(apdu)
+        if (sw1==0x90) and (sw2==0x00):
+            self.needs_2FA= False
         return (response, sw1, sw2)
-
 
     def card_crypt_transaction_2FA(self, msg, is_encrypt=True):
         if (type(msg)==str):
@@ -646,6 +657,9 @@ class CardConnector:
         return (response, sw1, sw2)
 
     def card_verify_PIN(self):
+        if not self.card_present:
+            self.client.request('show_error', 'No Satochip found! Please insert card!')
+            return
         while (True):
             (response, sw1, sw2, d)=self.card_get_status() # get number of pin tries remaining
             if self.pin is None:
@@ -720,7 +734,7 @@ class CardConnector:
 
     def card_init_connect(self):
         print(self.card_get_ATR())
-        response, sw1, sw2 = self.card_select()
+        #response, sw1, sw2 = self.card_select() #TODO: remove?
         
         # check applet version
         while(True):
@@ -743,6 +757,9 @@ class CardConnector:
                 msg_confirm = ("Please confirm the PIN code for your Satochip:")
                 msg_error= ("The PIN values do not match! Please type PIN again!")
                 (is_PIN, pin_0)= self.client.PIN_setup_dialog(msg, msg_confirm, msg_error)
+                if not is_PIN:
+                    self.client.request('show_message', "Satochip setup cancelled. \nTo restart setup, click on 'menu' -> 'Setup new Satochip'")
+                    return
                 pin_0= list(pin_0)
                 self.set_pin(0, pin_0) #cache PIN value in client
                 pin_tries_0= 0x05;
@@ -767,14 +784,20 @@ class CardConnector:
                         create_object_ACL, create_key_ACL, create_pin_ACL)
                 if sw1!=0x90 or sw2!=0x00:                 
                     print(f"[SatochipPlugin] setup_device(): unable to set up applet!  sw12={hex(sw1)} {hex(sw2)}")#debugSatochip
-                    raise RuntimeError('Unable to setup the device with error code:'+hex(sw1)+' '+hex(sw2))
+                    #raise RuntimeError('Unable to setup the device with error code:'+hex(sw1)+' '+hex(sw2))
+                    self.client.request('show_error', 'Unable to setup the device with error code:'+hex(sw1)+' '+hex(sw2))
             else:
                 print(f"[SatochipPlugin] unknown get-status() error! sw12={hex(sw1)} {hex(sw2)}")#debugSatochip
-                raise RuntimeError('Unknown get-status() error code:'+hex(sw1)+' '+hex(sw2))
+                #raise RuntimeError('Unknown get-status() error code:'+hex(sw1)+' '+hex(sw2))
+                self.client.request('show_error', 'Unknown get-status() error code:'+hex(sw1)+' '+hex(sw2) )
             
         # verify pin:
-        self.card_verify_PIN()
-                
+        try:
+            self.card_verify_PIN()
+        except Exception as exc:
+            self.client.request('show_error', repr(exc))
+            return
+        
         # get authentikey
         try:
             authentikey=self.card_bip32_get_authentikey()
@@ -783,18 +806,22 @@ class CardConnector:
             self.init_2FA()
                     
             # seed dialog...
-            print(f"[SatochipPlugin] setup_device(): import seed") #debugSatochip
+            print("[CardConnector] setup_device(): import seed...") #debugSatochip
             (mnemonic, passphrase, seed)= self.client.seed_wizard()                    
-            seed= list(seed)
-            authentikey= self.card_bip32_import_seed(seed)
+            if seed:
+                seed= list(seed)
+                authentikey= self.card_bip32_import_seed(seed)
+                if authentikey:
+                    self.client.request('show_success','Seed successfully imported to Satochip!')
+                else:
+                    self.client.request('show_error','Error when importing seed to Satochip!')
+            else: #if cancel
+                self.client.request('show_message','Seed import cancelled!')
+                
         hex_authentikey= authentikey.get_public_key_hex(compressed=True)
-        print(f"[SatochipPlugin] setup_device(): authentikey={hex_authentikey}")#debugSatochip
-        #return something?
+        print(f"[CardConnector] setup_device(): authentikey={hex_authentikey}")#debugSatochip       
         
     def init_2FA(self):
-        if (self.needs_2FA==None):
-            (response, sw1, sw2, d)=self.client.cc.card_get_status()
-               
         if not self.needs_2FA:
             use_2FA=self.client.request('yes_no_question', MSG_USE_2FA)
             if (use_2FA):
@@ -810,13 +837,17 @@ class CardConnector:
                         # Both are derived from the secret_2FA using a one-way function inside the Satochip
                         (response, sw1, sw2)=self.card_set_2FA_key(secret_2FA, amount_limit)
                         if sw1!=0x90 or sw2!=0x00:                 
-                            print("[satochip] SatochipPlugin: setup_device(): unable to set 2FA!  sw12="+hex(sw1)+" "+hex(sw2))#debugSatochip
+                            print("[CardConnector] Unable to set 2FA!  sw12="+hex(sw1)+" "+hex(sw2))#debugSatochip
                             self.client.request('show_error', 'Unable to setup 2FA with error code:'+hex(sw1)+' '+hex(sw2))
                             #raise RuntimeError('Unable to setup 2FA with error code:'+hex(sw1)+' '+hex(sw2))
+                        else:
+                            self.needs_2FA=True
+                            self.client.request('show_success', '2FA enabled successfully!')
                     else: # Cancel
                         self.client.request('show_message', '2FA activation canceled!')
                 except Exception as e:
-                    print("Exception during 2FA activation: "+str(e))    
+                    print("[CardConnector] Exception during 2FA activation: "+str(e))    
+                    self.client.request('show_error', 'Exception during 2FA activation: '+str(e))
         else:
             self.client.request('show_message', '2FA is already activated!')
     

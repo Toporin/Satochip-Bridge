@@ -20,7 +20,7 @@
 from hashlib import sha256
 from struct import pack, unpack
 from util import sha256d, to_bytes
-from ecc import ECPubkey, msg_magic, InvalidECPointException
+from ecc import ECPubkey, msg_magic, InvalidECPointException, sig_string_from_der_sig, sig_string_from_r_and_s, get_r_and_s_from_sig_string, CURVE_ORDER
 
 MSG_WARNING= ("Before you request bitcoins to be sent to addresses in this "
                     "wallet, ensure you can pair with your device, or that you have "
@@ -144,26 +144,25 @@ class CardDataParser:
         return compsig
 
     ##############
-    def parse_hash_signature(self, response, hash, pubkey):
-        print("    =>parse_hash_signature - Debug1")
-        # Prepend the message for signing as done inside the card!!
-        hash = to_bytes(hash, 'utf8')
-        print("    =>parse_hash_signature - Debug1A")
-        #hash = sha256d(msg_magic(message))
-        print("    =>parse_hash_signature - Debug1B")
+    def parse_rsv_from_dersig(self, dersig: bytes, hash: bytes, pubkey: ECPubkey):
+        """ Takes in input the DER signature returned by Satochip and return the r, s, v and sigstring format."""
+        #dersig= bytearray(response)
+        #hash = to_bytes(hash, 'utf8') 
         coordx= pubkey.get_public_key_bytes()
+    
+        sigstring= sig_string_from_der_sig(dersig)
+        r, s= get_r_and_s_from_sig_string(sigstring) #r,s:long int
+        # enforce low-S signature (BIP 62)
+        if s > CURVE_ORDER//2:
+            print('DEBUG: S is higher than CURVE_ORDER//2')
+            s = CURVE_ORDER - s
+            sigstring= sig_string_from_r_and_s(r,s)
         
-        print("    =>parse_hash_signature - Debug2")
-        
-        response= bytearray(response)
+        # v
         recid=-1
         for id in range(4):
-            compsig=self.parse_to_compact_sig(response, id, compressed=True)
-            # remove header byte
-            compsig2= compsig[1:]
-
             try:
-                pk = ECPubkey.from_sig_string(compsig2, id, hash)
+                pk = ECPubkey.from_sig_string(sigstring, id, hash)
                 pkbytes= pk.get_public_key_bytes(compressed=True)
                 print("    =>parse_hash_signature - rec_pubkey:"+pkbytes.hex())
             except InvalidECPointException:
@@ -176,8 +175,47 @@ class CardDataParser:
 
         if recid == -1:
             raise ValueError("Unable to recover public key from signature")
+        
+        v= recid % 2# 
+        sigstring= bytes([v])+sigstring
+        return (r, s, v, sigstring)
+        
+        
+    ##############
+    # def parse_hash_signature(self, response, hash, pubkey):
+        # print("    =>parse_hash_signature - Debug1")
+        # # Prepend the message for signing as done inside the card!!
+        # hash = to_bytes(hash, 'utf8')
+        # print("    =>parse_hash_signature - Debug1A")
+        # #hash = sha256d(msg_magic(message))
+        # print("    =>parse_hash_signature - Debug1B")
+        # coordx= pubkey.get_public_key_bytes()
+        
+        # print("    =>parse_hash_signature - Debug2")
+        
+        # response= bytearray(response)
+        # recid=-1
+        # for id in range(4):
+            # compsig=self.parse_to_compact_sig(response, id, compressed=True)
+            # # remove header byte
+            # compsig2= compsig[1:]
 
-        return compsig
+            # try:
+                # pk = ECPubkey.from_sig_string(compsig2, id, hash)
+                # pkbytes= pk.get_public_key_bytes(compressed=True)
+                # print("    =>parse_hash_signature - rec_pubkey:"+pkbytes.hex())
+            # except InvalidECPointException:
+                # continue
+
+            # if coordx==pkbytes:
+                # recid=id
+                # print("    =>parse_hash_signature - found good pubkey:"+pkbytes.hex())
+                # break
+
+        # if recid == -1:
+            # raise ValueError("Unable to recover public key from signature")
+
+        # return compsig
     
     ##############
     def get_pubkey_from_signature(self, coordx, data, sig):
@@ -286,20 +324,20 @@ class CardDataParser:
 
         return sigout;
     
-    def parse_compact_sig_to_ethcompsig(self, compsig):
-        print("    =>parse_compact_sig_to_ethcompsig - compsig:"+compsig.hex())
-        v= compsig[0]-27 if (compsig[0]<=28)  else compsig[0]-27-4 # recid is 0 or 1
-        ethcompsig= compsig[1:]+v.to_bytes(1, byteorder='big')
-        print("    =>parse_compact_sig_to_ethcompsig - ethcompsig:"+ethcompsig.hex())
-        return ethcompsig
+    # def parse_compact_sig_to_ethcompsig(self, compsig):
+        # print("    =>parse_compact_sig_to_ethcompsig - compsig:"+compsig.hex())
+        # v= compsig[0]-27 if (compsig[0]<=28)  else compsig[0]-27-4 # recid is 0 or 1
+        # ethcompsig= compsig[1:]+v.to_bytes(1, byteorder='big')
+        # print("    =>parse_compact_sig_to_ethcompsig - ethcompsig:"+ethcompsig.hex())
+        # return ethcompsig
     
-    def parse_compact_sig_to_rsv(self, compsig):
-        r= compsig[1:33] #init
-        s= compsig[33:]
-        #s= compsig[1:33] # new but wrong?
-        #r= compsig[33:]
-        v= compsig[0]-27 if (compsig[0]<=28)  else compsig[0]-27-4 # recid is 0 or 1
-        return (r,s,v)
+    # def parse_compact_sig_to_rsv(self, compsig):
+        # r= compsig[1:33] #init
+        # s= compsig[33:]
+        # #s= compsig[1:33] # new but wrong?
+        # #r= compsig[33:]
+        # v= compsig[0]-27 if (compsig[0]<=28)  else compsig[0]-27-4 # recid is 0 or 1
+        # return (r,s,v)
     
     
     
