@@ -1,0 +1,8 @@
+PyQRCode==1.2.1
+mnemonic==0.19
+pyperclip==1.7.0
+pyscard==1.9.9
+eth-keys==0.2.4
+ecdsa==0.14.1
+PySimpleGUIQt==0.31.0
+SimpleWebSocketServer==0.1.1
