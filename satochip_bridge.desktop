@@ -1,0 +1,22 @@
+# If you want Satochip-Bridge to appear in a Linux app launcher ("start menu"), install this by doing:
+# sudo desktop-file-install satochip_bridge.desktop
+
+[Desktop Entry]
+Comment=Bridging the gap between a wallet and Satochip
+Exec=sh -c "PATH=\"\\$HOME/.local/bin:\\$PATH\"; electrum %u"
+GenericName[en_US]=Satochip Bridge
+GenericName=Satochip Bridge
+Icon=satochip
+Name[en_US]=satochip_bridge.desktop
+Name=Satochip Bridge for wallet
+Categories=Finance;Network;
+StartupNotify=true
+StartupWMClass=electrum
+Terminal=false
+Type=Application
+#MimeType=x-scheme-handler/bitcoin;
+#Actions=Testnet;
+
+#[Desktop Action Testnet]
+#Exec=sh -c "PATH=\"\\$HOME/.local/bin:\\$PATH\"; electrum --testnet %u"
+#Name=Testnet mode

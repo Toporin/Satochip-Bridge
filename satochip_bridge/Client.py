@@ -1,4 +1,5 @@
 #import PySimpleGUI as sg   
+#import PySimpleGUIWx as sg 
 import PySimpleGUIQt as sg 
 import base64    
 import getpass
@@ -8,9 +9,16 @@ from queue import Queue
 import sys
 import os
 
-from Satochip2FA import Satochip2FA
-from CardConnector import CardConnector, UninitializedSeedError
- 
+try: 
+    from Satochip2FA import Satochip2FA
+    from CardConnector import CardConnector, UninitializedSeedError
+except Exception as e:
+    print("Import exception")
+    print(repr(e))
+    from satochip_bridge.Satochip2FA import Satochip2FA
+    from satochip_bridge.CardConnector import CardConnector, UninitializedSeedError
+    
+    
 class Client:
 
     def __init__(self, cc, handler):

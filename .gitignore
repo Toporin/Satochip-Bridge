@@ -1,2 +1,5 @@
-__pycache__/
-venv/
+satochip_bridge/__pycache__/
+.venv/
+dist/
+contrib/build-linux/appimage/build/
+contrib/build-linux/appimage/.cache/

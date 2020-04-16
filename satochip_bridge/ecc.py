@@ -38,7 +38,12 @@ from ecdsa.util import string_to_number, number_to_string
 #from electroncash.ecc_fast import do_monkey_patching_of_python_ecdsa_internals_with_libsecp256k1
 #from electroncash import msqr
 
-from util import sha256d, to_bytes, assert_bytes, bh2u, bfh, var_int
+try:
+    from util import sha256d, to_bytes, assert_bytes, bh2u, bfh, var_int
+except Exception as e:
+    print("Import exception")
+    print(repr(e))
+    from satochip_bridge.util import sha256d, to_bytes, assert_bytes, bh2u, bfh, var_int
 
 # do_monkey_patching_of_python_ecdsa_internals_with_libsecp256k1()
 CURVE_ORDER = SECP256k1.order

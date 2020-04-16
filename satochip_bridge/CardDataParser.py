@@ -19,9 +19,18 @@
 """
 from hashlib import sha256
 from struct import pack, unpack
-from util import sha256d, to_bytes
-from ecc import ECPubkey, msg_magic, InvalidECPointException, sig_string_from_der_sig, sig_string_from_r_and_s, get_r_and_s_from_sig_string, CURVE_ORDER
 
+try:
+    from util import sha256d, to_bytes
+    from ecc import ECPubkey, msg_magic, InvalidECPointException, sig_string_from_der_sig, sig_string_from_r_and_s, get_r_and_s_from_sig_string, CURVE_ORDER
+except Exception as e:
+    print("Import exception")
+    print(repr(e))
+    from satochip_bridge.util import sha256d, to_bytes
+    from satochip_bridge.ecc import ECPubkey, msg_magic, InvalidECPointException, sig_string_from_der_sig, sig_string_from_r_and_s, get_r_and_s_from_sig_string, CURVE_ORDER
+    
+    
+    
 MSG_WARNING= ("Before you request bitcoins to be sent to addresses in this "
                     "wallet, ensure you can pair with your device, or that you have "
                     "its seed (and passphrase, if any).  Otherwise all bitcoins you "

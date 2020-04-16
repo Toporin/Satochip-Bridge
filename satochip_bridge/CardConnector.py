@@ -6,17 +6,23 @@ from smartcard.Exceptions import CardConnectionException, CardRequestTimeoutExce
 from smartcard.util import toHexString, toBytes
 from smartcard.sw.SWExceptions import SWException
 
-from JCconstants import JCconstants
-from TxParser import TxParser
-from ecc import ECPubkey, msg_magic
-
+try:
+    from JCconstants import JCconstants
+    from TxParser import TxParser
+    from ecc import ECPubkey, msg_magic
+except Exception as e:
+    print("Import exception")
+    print(repr(e))
+    from satochip_bridge.JCconstants import JCconstants
+    from satochip_bridge.TxParser import TxParser
+    from satochip_bridge.ecc import ECPubkey, msg_magic
+    
 import base64
-import traceback
 import getpass
 from os import urandom
-
 #debug
-import sys, traceback
+import sys
+import traceback
 
 MSG_WARNING= ("Before you request bitcoins to be sent to addresses in this "
                     "wallet, ensure you can pair with your device, or that you have "

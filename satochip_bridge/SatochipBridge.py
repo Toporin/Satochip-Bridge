@@ -5,19 +5,54 @@ import time
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 from os import urandom
 
-from CardConnector import CardConnector, UninitializedSeedError
-from CardDataParser import CardDataParser
-from JCconstants import JCconstants
-#from TxParser import TxParser
-#from ecc import ECPubkey, CURVE_ORDER, der_sig_from_r_and_s, get_r_and_s_from_der_sig
-from Satochip2FA import Satochip2FA
-from Client import Client, HandlerTxt, HandlerSimpleGUI
+try: 
+    from CardConnector import CardConnector, UninitializedSeedError
+    from CardDataParser import CardDataParser
+    from JCconstants import JCconstants
+    from Satochip2FA import Satochip2FA
+    from Client import Client, HandlerTxt, HandlerSimpleGUI
+    #from TxParser import TxParser
+    #from ecc import ECPubkey, CURVE_ORDER, der_sig_from_r_and_s, get_r_and_s_from_der_sig
+except Exception as e:
+    print("Import exception")
+    print(repr(e))
+    from satochip_bridge.CardConnector import CardConnector, UninitializedSeedError
+    from satochip_bridge.CardDataParser import CardDataParser
+    from satochip_bridge.JCconstants import JCconstants
+    from satochip_bridge.Satochip2FA import Satochip2FA
+    from satochip_bridge.Client import Client, HandlerTxt, HandlerSimpleGUI
+    #from satochip_bridge.TxParser import TxParser
+    #from satochip_bridge.ecc import ECPubkey, CURVE_ORDER, der_sig_from_r_and_s, get_r_and_s_from_der_sig
 
 #debug
-from eth_keys import keys
-from eth_keys import KeyAPI
-from eth_keys.backends import NativeECCBackend
+try:
+    from eth_keys import keys
+except Exception as e:
+    print("Import exception for eth_keys")
+    print(repr(e))
+    import os
+    try:
+        user_paths = os.environ['PYTHONPATH'].split(os.pathsep)
+        print("PYTHONPATH:")
+        print(repr(user_paths))
+    except KeyError:
+        print("KeyError")
+        print(repr(e))
+        user_paths = []
+        print("user_paths = []")
 
+try:
+    from eth_keys import KeyAPI
+except Exception as e:
+    print("Import exception for eth_keys keyAPI")
+    print(repr(e))
+    
+try:
+    from eth_keys.backends import NativeECCBackend
+except Exception as e:
+    print("Import exception for eth_keys NativeECCBackend")
+    print(repr(e))
+    
 #handler= HandlerTxt()
 handler= HandlerSimpleGUI()
 client= Client(None, handler)
