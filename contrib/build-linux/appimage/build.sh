@@ -7,7 +7,7 @@ CONTRIB="$PROJECT_ROOT/contrib"
 CONTRIB_APPIMAGE="$CONTRIB/build-linux/appimage"
 DISTDIR="$PROJECT_ROOT/dist"
 BUILDDIR="$CONTRIB_APPIMAGE/build/appimage"
-APPDIR="$BUILDDIR/electrum.AppDir" #todo
+APPDIR="$BUILDDIR/satochip_bridge.AppDir" #APPDIR="$BUILDDIR/electrum.AppDir" #todo
 CACHEDIR="$CONTRIB_APPIMAGE/.cache/appimage"
 
 # pinned versions
@@ -18,7 +18,7 @@ SQUASHFSKIT_COMMIT="ae0d656efa2d0df2fcac795b6823b44462f19386"
 
 
 VERSION=`git describe --tags --dirty --always`
-APPIMAGE="$DISTDIR/electrum-$VERSION-x86_64.AppImage" #todo
+APPIMAGE="$DISTDIR/satochip_bridge-$VERSION-x86_64.AppImage" #APPIMAGE="$DISTDIR/electrum-$VERSION-x86_64.AppImage"
 
 . "$CONTRIB"/build_tools_util.sh
 
@@ -65,6 +65,9 @@ tar xf "$CACHEDIR/Python-$PYTHON_VERSION.tar.xz" -C "$BUILDDIR"
     # Some more info: https://bugs.python.org/issue27631
     sed -i -e 's/\.exe//g' "$APPDIR"/usr/lib/python3.6/_sysconfigdata*
 )
+
+# info "DEBUG: check if QT5 present?"
+# apt list qt5-default -a
 
 # info "DEBUG building tkinter"
 # apt-get download python3-tk
@@ -142,7 +145,7 @@ info "installing pip."
 info "installing Satochip-Bridge and its dependencies."
 mkdir -p "$CACHEDIR/pip_cache"
 "$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/requirements/requirements.txt"
-"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/requirements/requirements-hw.txt"
+#"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/requirements/requirements-hw.txt"
 #"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/deterministic-build/requirements.txt"
 #"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/deterministic-build/requirements-binaries.txt"
 #"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/deterministic-build/requirements-hw.txt"
@@ -151,6 +154,8 @@ mkdir -p "$CACHEDIR/pip_cache"
 info "installing Satochip-Bridge."
 "$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" "$PROJECT_ROOT"
 
+#debug: test python & pysimplegui
+#$python
 
 # Satochip
 # info "copying zbar"
@@ -200,16 +205,17 @@ strip_binaries()
     find "$APPDIR" -type f -regex '.*\.so\(\.[0-9.]+\)?$' -print0
   } | xargs -0 --no-run-if-empty --verbose strip -R .note.gnu.build-id -R .comment
 }
-strip_binaries
+# strip_binaries #debug =>  ImportError: /tmp/.mount_electrmmVOQb/usr/lib/python3.6/site-packages/PySide2/QtWidgets.abi3.so: cannot change memory protections
 
 remove_emptydirs()
 {
   find "$APPDIR" -type d -empty -print0 | xargs -0 --no-run-if-empty rmdir -vp --ignore-fail-on-non-empty
 }
-remove_emptydirs
+remove_emptydirs #debug
 
 
 info "removing some unneeded stuff to decrease binary size."
+#debug
 rm -rf "$APPDIR"/usr/{share,include}
 PYDIR="$APPDIR"/usr/lib/python3.6
 rm -rf "$PYDIR"/{test,ensurepip,lib2to3,idlelib,turtledemo}
@@ -219,29 +225,46 @@ rm -rf "$PYDIR"/config-3.6m-x86_64-linux-gnu
 rm -rf "$PYDIR"/site-packages/{opt,pip,setuptools,wheel}
 rm -rf "$PYDIR"/site-packages/Cryptodome/SelfTest
 rm -rf "$PYDIR"/site-packages/{psutil,qrcode,websocket}/tests
+# for component in connectivity declarative help location multimedia quickcontrols2 serialport webengine websockets xmlpatterns ; do
+  # rm -rf "$PYDIR"/site-packages/PyQt5/Qt/translations/qt${component}_*
+  # rm -rf "$PYDIR"/site-packages/PyQt5/Qt/resources/qt${component}_*
+# done
+# rm -rf "$PYDIR"/site-packages/PyQt5/Qt/{qml,libexec}
+# rm -rf "$PYDIR"/site-packages/PyQt5/{pyrcc.so,pylupdate.so,uic}
+# rm -rf "$PYDIR"/site-packages/PyQt5/Qt/plugins/{bearer,gamepads,geometryloaders,geoservices,playlistformats,position,renderplugins,sceneparsers,sensors,sqldrivers,texttospeech,webview}
+# for component in Bluetooth Concurrent Designer Help Location NetworkAuth Nfc Positioning PositioningQuick Qml Quick Sensors SerialPort Sql Test Web Xml ; do
+    # rm -rf "$PYDIR"/site-packages/PyQt5/Qt/lib/libQt5${component}*
+    # rm -rf "$PYDIR"/site-packages/PyQt5/Qt${component}*
+# done
+# rm -rf "$PYDIR"/site-packages/PyQt5/Qt.so
+
 for component in connectivity declarative help location multimedia quickcontrols2 serialport webengine websockets xmlpatterns ; do
-  rm -rf "$PYDIR"/site-packages/PyQt5/Qt/translations/qt${component}_*
-  rm -rf "$PYDIR"/site-packages/PyQt5/Qt/resources/qt${component}_*
+  rm -rf "$PYDIR"/site-packages/PySide2/Qt/translations/qt${component}_*
+  rm -rf "$PYDIR"/site-packages/PySide2/Qt/resources/qt${component}_*
 done
-rm -rf "$PYDIR"/site-packages/PyQt5/Qt/{qml,libexec}
-rm -rf "$PYDIR"/site-packages/PyQt5/{pyrcc.so,pylupdate.so,uic}
-rm -rf "$PYDIR"/site-packages/PyQt5/Qt/plugins/{bearer,gamepads,geometryloaders,geoservices,playlistformats,position,renderplugins,sceneparsers,sensors,sqldrivers,texttospeech,webview}
-for component in Bluetooth Concurrent Designer Help Location NetworkAuth Nfc Positioning PositioningQuick Qml Quick Sensors SerialPort Sql Test Web Xml ; do
-    rm -rf "$PYDIR"/site-packages/PyQt5/Qt/lib/libQt5${component}*
-    rm -rf "$PYDIR"/site-packages/PyQt5/Qt${component}*
+rm -rf "$PYDIR"/site-packages/PySide2/Qt/{qml,libexec}
+rm -rf "$PYDIR"/site-packages/PySide2/{pyrcc.so,pylupdate.so,uic}
+rm -rf "$PYDIR"/site-packages/PySide2/Qt/plugins/{bearer,gamepads,geometryloaders,geoservices,playlistformats,position,renderplugins,sceneparsers,sensors,sqldrivers,texttospeech,webview}
+for component in Bluetooth Concurrent Designer Help Location NetworkAuth Nfc Positioning PositioningQuick Quick Sensors SerialPort Sql Test Web Xml ; do
+    rm -rf "$PYDIR"/site-packages/PySide2/Qt/lib/libQt5${component}*
+    rm -rf "$PYDIR"/site-packages/PySide2/Qt${component}*
 done
-rm -rf "$PYDIR"/site-packages/PyQt5/Qt.so
+rm -rf "$PYDIR"/site-packages/PySide2/Qt.so
+
 
 # these are deleted as they were not deterministic; and are not needed anyway
 info "removing some unneeded stuff (not deterministic)"
 find "$APPDIR" -path '*/__pycache__*' -delete
 #rm "$APPDIR"/usr/lib/libsecp256k1.a
 # note that jsonschema-*.dist-info is needed by that package as it uses 'pkg_resources.get_distribution'
-#debug #for f in "$PYDIR"/site-packages/jsonschema-*.dist-info; do mv "$f" "$(echo "$f" | sed s/\.dist-info/\.dist-info2/)"; done
+# Import exception for eth_keys keyAPI
+# DistributionNotFound(Requirement.parse('eth-utils'), None)
+#for f in "$PYDIR"/site-packages/jsonschema-*.dist-info; do mv "$f" "$(echo "$f" | sed s/\.dist-info/\.dist-info2/)"; done
+for f in "$PYDIR"/site-packages/eth_utils-*.dist-info; do mv "$f" "$(echo "$f" | sed s/\.dist-info/\.dist-info2/)"; done
 rm -rf "$PYDIR"/site-packages/*.dist-info/
 rm -rf "$PYDIR"/site-packages/*.egg-info/
-#debug #for f in "$PYDIR"/site-packages/jsonschema-*.dist-info2; do mv "$f" "$(echo "$f" | sed s/\.dist-info2/\.dist-info/)"; done
-
+#for f in "$PYDIR"/site-packages/jsonschema-*.dist-info2; do mv "$f" "$(echo "$f" | sed s/\.dist-info2/\.dist-info/)"; done
+for f in "$PYDIR"/site-packages/eth_utils-*.dist-info2; do mv "$f" "$(echo "$f" | sed s/\.dist-info2/\.dist-info/)"; done
 
 find -exec touch -h -d '2000-11-11T11:11:11+00:00' {} +
 

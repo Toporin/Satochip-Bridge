@@ -27,7 +27,7 @@ class Client:
         self.queue_request= Queue()
         self.queue_reply= Queue()
         self.cc= None
-    
+       
     def create_system_tray(self, card_present):
         self.handler.system_tray(card_present)
     
@@ -252,15 +252,24 @@ class HandlerTxt:
 class HandlerSimpleGUI:
     def __init__(self): 
         sg.theme('BluePurple')
-        self.satochip_icon= "satochip.png"
-        self.satochip_unpaired_icon= "satochip_unpaired.png"
-        pass
+        # absolute path to python package folder of satochip_bridge ("lib")
+        self.pkg_dir = os.path.split(os.path.realpath(__file__))[0]
+        print("DEBUG PKGDIR= ", self.pkg_dir)
+        self.satochip_icon= self.icon_path("satochip.png") #"satochip.png"
+        self.satochip_unpaired_icon= self.icon_path("satochip_unpaired.png") #"satochip_unpaired.png"
+         
+    # def resource_path(*parts):
+        # return os.path.join(pkg_dir, *parts)
 
+    def icon_path(self, icon_basename):
+        #return resource_path(icon_basename)
+        return os.path.join(self.pkg_dir, icon_basename)
+    
     def update_status(self, isConnected):
         if (isConnected):
-            self.tray.update(filename=r'satochip.png')
+            self.tray.update(filename=self.satochip_icon) #self.tray.update(filename=r'satochip.png')
         else:
-            self.tray.update(filename=r'satochip_unpaired.png')
+            self.tray.update(filename=self.satochip_unpaired_icon) #self.tray.update(filename=r'satochip_unpaired.png')
             
     def show_error(self, msg):
         sg.popup('Satochip-Bridge Error!', msg, icon=self.satochip_unpaired_icon)
@@ -270,7 +279,7 @@ class HandlerSimpleGUI:
         sg.popup('Satochip-Bridge Notification', msg, icon=self.satochip_icon)
     def show_notification(self,msg):
         print ("START show_notification")
-        #self.tray.ShowMessage("Satochip-Bridge notification", msg, filename=r'satochip.png', time=10000)
+        #self.tray.ShowMessage("Satochip-Bridge notification", msg, filename=self.satochip_icon, time=10000)
         self.tray.ShowMessage("Satochip-Bridge notification", msg, messageicon=sg.SYSTEM_TRAY_MESSAGE_ICON_INFORMATION, time=100000)
         print ("END show_notification")
     
@@ -498,9 +507,9 @@ class HandlerSimpleGUI:
         self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&Enable 2FA', '&About', '&Quit']]
         
         if card_present:
-            self.tray = sg.SystemTray(menu=self.menu_def, filename=r'satochip.png')
+            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_icon) #self.tray = sg.SystemTray(menu=self.menu_def, filename=r'satochip.png')
         else:
-            self.tray = sg.SystemTray(menu=self.menu_def, filename=r'satochip_unpaired.png')
+            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_unpaired_icon) #self.tray = sg.SystemTray(menu=self.menu_def, filename=r'satochip_unpaired.png')
 
         while True:
             menu_item = self.tray.Read(timeout=1)

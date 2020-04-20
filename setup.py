@@ -64,6 +64,13 @@ setup(
     install_requires=requirements,
     extras_require=extras_require,
     packages=['satochip_bridge'],
+    package_dir={
+        'satochip_bridge': 'satochip_bridge'
+    },
+    package_data={
+        'satochip_bridge': ['*.png', '*.ico'],
+        #'satochip_bridge.gui': ['icons/*',],
+    },
     # packages=[
         # 'electrum',
         # 'electrum.gui',
