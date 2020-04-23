@@ -1,4 +1,5 @@
 PyQRCode==1.2.1
+pypng==0.0.20 
 mnemonic==0.19
 pyperclip==1.7.0
 eth-keys==0.3.1
