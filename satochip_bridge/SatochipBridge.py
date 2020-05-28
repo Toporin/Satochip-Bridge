@@ -1,28 +1,25 @@
 import json
 import threading
 import time
- 
+import logging
+
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 from os import urandom
 
+from pysatochip.CardConnector import CardConnector, UninitializedSeedError
+from pysatochip.CardDataParser import CardDataParser
+from pysatochip.JCconstants import JCconstants
+from pysatochip.Satochip2FA import Satochip2FA
+#from pysatochip.TxParser import TxParser
+#from pysatochip.ecc import ECPubkey, CURVE_ORDER, der_sig_from_r_and_s, get_r_and_s_from_der_sig
+
 try: 
-    from CardConnector import CardConnector, UninitializedSeedError
-    from CardDataParser import CardDataParser
-    from JCconstants import JCconstants
-    from Satochip2FA import Satochip2FA
-    from Client import Client, HandlerTxt, HandlerSimpleGUI
-    #from TxParser import TxParser
-    #from ecc import ECPubkey, CURVE_ORDER, der_sig_from_r_and_s, get_r_and_s_from_der_sig
+    from Client import Client
+    from handler import HandlerTxt, HandlerSimpleGUI
 except Exception as e:
     print("Import exception")
     print(repr(e))
-    from satochip_bridge.CardConnector import CardConnector, UninitializedSeedError
-    from satochip_bridge.CardDataParser import CardDataParser
-    from satochip_bridge.JCconstants import JCconstants
-    from satochip_bridge.Satochip2FA import Satochip2FA
     from satochip_bridge.Client import Client, HandlerTxt, HandlerSimpleGUI
-    #from satochip_bridge.TxParser import TxParser
-    #from satochip_bridge.ecc import ECPubkey, CURVE_ORDER, der_sig_from_r_and_s, get_r_and_s_from_der_sig
 
 #debug
 try:
@@ -52,12 +49,15 @@ try:
 except Exception as e:
     print("Import exception for eth_keys NativeECCBackend")
     print(repr(e))
-    
+   
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+   
 #handler= HandlerTxt()
 handler= HandlerSimpleGUI()
 client= Client(None, handler)
 parser= CardDataParser()
-cc = CardConnector(parser, client)
+cc = CardConnector(client, logger.getEffectiveLevel())
 status= None
 EXIT_SUCCESS=0
 EXIT_FAILURE=1

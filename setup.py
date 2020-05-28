@@ -96,7 +96,7 @@ setup(
     description="Bridging the gap between a wallet and Satochip",
     author="Toporin",
     author_email="Satochip.wallet@gmail.com",
-    license="AGLPv3.0",
+    license="GNU Lesser General Public License v3 (LGPLv3)",
     url="https://satochip.io",
     long_description="""Bridging the gap between a wallet and Satochip""",
 )
