@@ -11,6 +11,7 @@ from queue import Queue
 
 from pysatochip.Satochip2FA import Satochip2FA
 from pysatochip.CardConnector import CardConnector, UninitializedSeedError
+from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -51,17 +52,16 @@ class HandlerTxt:
         print(msg)
 
 class HandlerSimpleGUI:
-    def __init__(self): 
+    def __init__(self, loglevel= logging.WARNING): 
+        logger.setLevel(loglevel)
+        logger.debug("In __init__")
         sg.theme('BluePurple')
         # absolute path to python package folder of satochip_bridge ("lib")
         self.pkg_dir = os.path.split(os.path.realpath(__file__))[0]
-        print("DEBUG PKGDIR= ", self.pkg_dir)
+        logger.debug("PKGDIR= " + str(self.pkg_dir))
         self.satochip_icon= self.icon_path("satochip.png") #"satochip.png"
         self.satochip_unpaired_icon= self.icon_path("satochip_unpaired.png") #"satochip_unpaired.png"
          
-    # def resource_path(*parts):
-        # return os.path.join(pkg_dir, *parts)
-
     def icon_path(self, icon_basename):
         #return resource_path(icon_basename)
         return os.path.join(self.pkg_dir, icon_basename)
@@ -79,13 +79,13 @@ class HandlerSimpleGUI:
     def show_message(self, msg):
         sg.popup('Satochip-Bridge Notification', msg, icon=self.satochip_icon)
     def show_notification(self,msg):
-        print ("START show_notification")
+        #logger.debug("START show_notification")
         #self.tray.ShowMessage("Satochip-Bridge notification", msg, filename=self.satochip_icon, time=10000)
         self.tray.ShowMessage("Satochip-Bridge notification", msg, messageicon=sg.SYSTEM_TRAY_MESSAGE_ICON_INFORMATION, time=100000)
-        print ("END show_notification")
+        #logger.debug("END show_notification")
     
     def yes_no_question(self, question):
-               
+        logger.debug('In yes_no_question')
         layout = [[sg.Text(question)],      
                         [sg.Button('Yes'), sg.Button('No')]]      
         #window = sg.Window('Satochip-Bridge: Confirmation required', layout, icon=SatochipBase64)    #NOK
@@ -95,14 +95,14 @@ class HandlerSimpleGUI:
         window.close()  
         del window
         
-        print("Type of event from getpass:"+str(type(event))+str(event))
+        #logger.debug("Type of event from getpass:"+str(type(event))+str(event))
         if event=='Yes':
             return True
         else: # 'No' or None
             return False
                 
     def get_passphrase(self, msg): 
-        
+        logger.debug('In get_passphrase')
         layout = [[sg.Text(msg)],      
                          [sg.InputText(password_char='*', key='pin')],      
                          [sg.Submit(), sg.Cancel()]]      
@@ -113,11 +113,12 @@ class HandlerSimpleGUI:
         
         is_PIN= True if event=='Submit' else False 
         pin = values['pin']
-        print("Type of pin from getpass:"+str(type(pin)))
-        print("Type of event from getpass:"+str(type(event))+str(event))
+        # logger.debug("Type of pin from getpass:"+str(type(pin)))
+        # logger.debug("Type of event from getpass:"+str(type(event))+str(event))
         return (is_PIN, pin)
         
     def QRDialog(self, data, parent=None, title = "Satochip-Bridge: QR code", show_text=False, msg= ''):
+        logger.debug('In QRDialog')
         import pyqrcode
         code = pyqrcode.create(data)
         image_as_str = code.png_as_base64_str(scale=5, quiet_zone=2) #string
@@ -137,11 +138,12 @@ class HandlerSimpleGUI:
         window.close()
         del window
         pyperclip.copy('') #purge 2FA from clipboard
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
+        # logger.debug("Event:"+str(type(event))+str(event))
+        # logger.debug("Values:"+str(type(values))+str(values))
         return (event, values)
     
     def reset_seed_dialog(self, msg):
+        logger.debug('In reset_seed_dialog')
         layout = [[sg.Text(msg)],
                 [sg.InputText(password_char='*', key='pin')], 
                 [sg.Checkbox('Also reset 2FA', key='reset_2FA')], 
@@ -151,15 +153,15 @@ class HandlerSimpleGUI:
         window.close()
         del window
         
-        # print("Event:"+str(type(event))+str(event))
-        # print("Values:"+str(type(values))+str(values))
+        # logger.debug("Event:"+str(type(event))+str(event))
+        # logger.debug("Values:"+str(type(values))+str(values))
         #Event:<class 'str'>Ok
         #Values:<class 'dict'>{'passphrase': 'toto', 'reset_2FA': False}
         return (event, values)
     
     ### SEED Config ###
     def choose_seed_action(self):
-        
+        logger.debug('In choose_seed_action')
         layout = [[sg.Text("Do you want to create a new seed, or to restore a wallet using an existing seed?")],
                 [sg.Radio('Create a new seed', 'radio1', key='create')], 
                 [sg.Radio('I already have a seed', 'radio1', key='restore')], 
@@ -169,14 +171,14 @@ class HandlerSimpleGUI:
         window.close()
         del window
         
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
+        logger.debug("Event:"+str(type(event))+str(event))
+        logger.debug("Values:"+str(type(values))+str(values))
         #Event:<class 'str'>Next
         #Values:<class 'dict'>{'create': True, 'restore': False}
         return (event, values)
         
     def create_seed(self, seed):    
-        
+        logger.debug('In create_seed')
         warning1= ("Please save these 12 words on paper (order is important). \nThis seed will allow you to recover your wallet in case of computer failure.")
         warning2= ("WARNING:")
         warning3= ("*Never disclose your seed.\n*Never type it on a website.\n*Do not store it electronically.")
@@ -198,14 +200,14 @@ class HandlerSimpleGUI:
         window.close()
         del window
         
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
+        logger.debug("Event:"+str(type(event))+str(event))
+        logger.debug("Values:"+str(type(values))+str(values))
         #Event:<class 'str'>Next
         #Values:<class 'dict'>{'use_passphrase': False}
         return (event, values)
         
     def request_passphrase(self):
-        
+        logger.debug('In request_passphrase')
         info1= ("You may extend your seed with custom words.\nYour seed extension must be saved together with your seed.")
         info2=("Note that this is NOT your encryption password.\nIf you do not know what this is, leave this field empty.")
         layout = [[sg.Text("Seed extension")],
@@ -218,14 +220,15 @@ class HandlerSimpleGUI:
         window.close()
         del window
         
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
+        logger.debug("Event:"+str(type(event))+str(event))
+        logger.debug("Values:"+str(type(values))+str(values))
         #Event:<class 'str'>Next
         #Values:<class 'dict'>{'passphrase': 'toto'}
         return (event, values)
         
         
     def confirm_seed(self):
+        logger.debug('In confirm_seed')
         pyperclip.copy('') #purge clipboard to ensure that seed is backuped
         info1= ("Your seed is important! If you lose your seed, your money will be \npermanently lost. To make sure that you have properly saved your \nseed, please retype it here:")
         layout = [[sg.Text("Confirm seed")],
@@ -237,13 +240,14 @@ class HandlerSimpleGUI:
         window.close()
         del window
         
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
+        logger.debug("Event:"+str(type(event))+str(event))
+        logger.debug("Values:"+str(type(values))+str(values))
         #Event:<class 'str'>Next
         #Values:<class 'dict'>{'seed_confirm': 'AA ZZ'}
         return (event, values)
         
     def confirm_passphrase(self):
+        logger.debug('In confirm_passphrase')
         info1= ("Your seed extension must be saved together with your seed.\nPlease type it here.")
         layout = [[sg.Text("Confirm seed extension")],
                 [sg.Text(info1)], 
@@ -254,13 +258,14 @@ class HandlerSimpleGUI:
         window.close()
         del window
         
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
+        logger.debug("Event:"+str(type(event))+str(event))
+        logger.debug("Values:"+str(type(values))+str(values))
         #Event:<class 'str'>Next
         #Values:<class 'dict'>{'seed_confirm': 'AA ZZ'}
         return (event, values)
         
     def restore_from_seed(self):
+        logger.debug('In confirm_passphrase')
         from mnemonic import Mnemonic
         MNEMONIC = Mnemonic(language="english")
         
@@ -282,29 +287,30 @@ class HandlerSimpleGUI:
         window.close()
         del window
         
-        # print("Event:"+str(type(event))+str(event))
-        # print("Values:"+str(type(values))+str(values))
+        # logger.debug("Event:"+str(type(event))+str(event))
+        # logger.debug("Values:"+str(type(values))+str(values))
         return (event, values)
     
     # communicate with other threads through queues
     def reply(self):    
         
         while not self.client.queue_request.empty(): 
-            print('Debug: check QUEUE NOT EMPTY')
+            #logger.debug('Debug: check QUEUE NOT EMPTY')
             (request_type, args)= self.client.queue_request.get()
-            print("Request in queue:", request_type)
+            logger.debug("Request in queue:" + str(request_type))
             for arg in args: 
-                print("Next argument through *args :", arg) 
+                logger.debug("Next argument through *args :" + str(arg)) 
             
             method_to_call = getattr(self, request_type)
-            print('Type of method_to_call: '+ str(type(method_to_call)))
-            print('method_to_call: '+ str(method_to_call))
+            #logger.debug('Type of method_to_call: '+ str(type(method_to_call)))
+            #logger.debug('method_to_call: '+ str(method_to_call))
             
             reply = method_to_call(*args)
             self.client.queue_reply.put((request_type, reply))
                 
     # system tray   
     def system_tray(self, card_present):
+        logger.debug('In system_tray')
         self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&Enable 2FA', '&About', '&Quit']]
         
         if card_present:
@@ -315,11 +321,11 @@ class HandlerSimpleGUI:
         while True:
             menu_item = self.tray.Read(timeout=1)
             if menu_item != '__TIMEOUT__':
-                print(menu_item) 
+                logger.debug('Menu item: '+menu_item) 
             
             ## Setup new Satochip ##
             if menu_item== 'Setup new Satochip':
-                self.client.cc.card_init_connect()
+                self.client.card_init_connect()
             
             ## Change PIN ##
             elif menu_item== 'Change PIN':
@@ -379,7 +385,7 @@ class HandlerSimpleGUI:
                     d={}
                     d['msg_encrypt']= msg_out
                     d['id_2FA']= id_2FA
-                    # print("encrypted message: "+msg_out)
+                    # logger.debug("encrypted message: "+msg_out)
                     
                     #do challenge-response with 2FA device...
                     self.show_message('2FA request sent! Approve or reject request on your second device.')
@@ -391,7 +397,7 @@ class HandlerSimpleGUI:
                         self.show_error("No response received from 2FA...")
                         continue
                     reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    print("challenge:response= "+ reply_decrypt)
+                    logger.debug("challenge:response= "+ reply_decrypt)
                     reply_decrypt= reply_decrypt.split(":")
                     chalresponse=reply_decrypt[1]
                     hmac= list(bytes.fromhex(chalresponse))
@@ -427,7 +433,7 @@ class HandlerSimpleGUI:
                     except Exception as e:
                         self.show_error("No response received from 2FA...")
                     reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    print("challenge:response= "+ reply_decrypt)
+                    logger.debug("challenge:response= "+ reply_decrypt)
                     reply_decrypt= reply_decrypt.split(":")
                     chalresponse=reply_decrypt[1]
                     hmac= list(bytes.fromhex(chalresponse))
@@ -444,23 +450,26 @@ class HandlerSimpleGUI:
             
             ## Enable 2FA ##
             elif menu_item== 'Enable 2FA':
-                self.client.cc.init_2FA()
+                self.client.init_2FA()
                 continue
              
             ## About ##
             elif menu_item== 'About':
                 #copyright
                 msg_copyright= ''.join([ '(c)2020 - Satochip by Toporin - https://github.com/Toporin/ \n',
-                                                        "This program is licensed under the GNU Affero General Public License v3.0 \n",
+                                                        "This program is licensed under the GNU Lesser General Public License v3.0 \n",
                                                         "This software is provided 'as-is', without any express or implied warranty.\n",
                                                         "In no event will the authors be held liable for any damages arising from \n"
                                                         "the use of this software."])
                 #sw version
-                v_supported= (CardConnector.SATOCHIP_PROTOCOL_MAJOR_VERSION<<8)+CardConnector.SATOCHIP_PROTOCOL_MINOR_VERSION
-                sw_rel= str(CardConnector.SATOCHIP_PROTOCOL_MAJOR_VERSION) +'.'+ str(CardConnector.SATOCHIP_PROTOCOL_MINOR_VERSION)
+                # v_supported= (CardConnector.SATOCHIP_PROTOCOL_MAJOR_VERSION<<8)+CardConnector.SATOCHIP_PROTOCOL_MINOR_VERSION
+                # sw_rel= str(CardConnector.SATOCHIP_PROTOCOL_MAJOR_VERSION) +'.'+ str(CardConnector.SATOCHIP_PROTOCOL_MINOR_VERSION)
+                v_supported= (SATOCHIP_PROTOCOL_MAJOR_VERSION<<8)+SATOCHIP_PROTOCOL_MINOR_VERSION
+                sw_rel= str(SATOCHIP_PROTOCOL_MAJOR_VERSION) +'.'+ str(SATOCHIP_PROTOCOL_MINOR_VERSION)
                 fw_rel= "N/A"
                 is_seeded= "N/A"
                 needs_2FA= "N/A"
+                needs_SC= "N/A"
                 msg_status= ("Card is not initialized! \nClick on 'Setup new Satochip' in the menu to start configuration.")
                     
                 (response, sw1, sw2, status)=self.client.cc.card_get_status()
@@ -496,7 +505,9 @@ class HandlerSimpleGUI:
                         needs_SC= "yes"
                     else:
                         needs_SC= "no"
-                        
+                else:
+                    msg_status= 'No card found! please insert card!'
+                    
                 frame_layout1= [[sg.Text('Supported Version: ', size=(20, 1)), sg.Text(sw_rel)],
                                             [sg.Text('Firmware Version: ', size=(20, 1)), sg.Text(fw_rel)],
                                             [sg.Text('Wallet is seeded: ', size=(20, 1)), sg.Text(is_seeded)],

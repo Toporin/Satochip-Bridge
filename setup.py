@@ -95,7 +95,7 @@ setup(
     #data_files=data_files,
     description="Bridging the gap between a wallet and Satochip",
     author="Toporin",
-    author_email="Satochip.wallet@gmail.com",
+    author_email="satochip.wallet@gmail.com",
     license="GNU Lesser General Public License v3 (LGPLv3)",
     url="https://satochip.io",
     long_description="""Bridging the gap between a wallet and Satochip""",

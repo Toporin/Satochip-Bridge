@@ -2,66 +2,57 @@ import json
 import threading
 import time
 import logging
+import sys
 
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 from os import urandom
 
 from pysatochip.CardConnector import CardConnector, UninitializedSeedError
-from pysatochip.CardDataParser import CardDataParser
+#from pysatochip.CardDataParser import CardDataParser
 from pysatochip.JCconstants import JCconstants
 from pysatochip.Satochip2FA import Satochip2FA
+from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
+
 #from pysatochip.TxParser import TxParser
 #from pysatochip.ecc import ECPubkey, CURVE_ORDER, der_sig_from_r_and_s, get_r_and_s_from_der_sig
 
-try: 
-    from Client import Client
-    from handler import HandlerTxt, HandlerSimpleGUI
-except Exception as e:
-    print("Import exception")
-    print(repr(e))
-    from satochip_bridge.Client import Client, HandlerTxt, HandlerSimpleGUI
+from Client import Client
+from handler import HandlerTxt, HandlerSimpleGUI
 
-#debug
-try:
-    from eth_keys import keys
-except Exception as e:
-    print("Import exception for eth_keys")
-    print(repr(e))
-    import os
-    try:
-        user_paths = os.environ['PYTHONPATH'].split(os.pathsep)
-        print("PYTHONPATH:")
-        print(repr(user_paths))
-    except KeyError:
-        print("KeyError")
-        print(repr(e))
-        user_paths = []
-        print("user_paths = []")
+# try: 
+    # from Client import Client
+    # from handler import HandlerTxt, HandlerSimpleGUI
+# except Exception as e:
+    # print("Import exception")
+    # print(repr(e))
+    # from satochip_bridge.Client import Client
+    # from satochip_bridge.handler import HandlerTxt, HandlerSimpleGUI
 
-try:
-    from eth_keys import KeyAPI
-except Exception as e:
-    print("Import exception for eth_keys keyAPI")
-    print(repr(e))
-    
-try:
-    from eth_keys.backends import NativeECCBackend
-except Exception as e:
-    print("Import exception for eth_keys NativeECCBackend")
-    print(repr(e))
-   
+# try:
+    # from eth_keys import keys, KeyAPI
+    # from eth_keys.backends import NativeECCBackend
+# except Exception as e:
+    # print("Import exception for eth_keys")
+    # print(repr(e))
+
+if (len(sys.argv)>=2) and (sys.argv[1]in ['-v', '--verbose']):
+    logging.basicConfig(level=logging.DEBUG, format='%(levelname)s [%(module)s] %(funcName)s | %(message)s')
+else:
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s [%(module)s] %(funcName)s | %(message)s')
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-   
+#logger.setLevel(logging.DEBUG)
+
+logger.warning("A loglevel: "+ str(logger.getEffectiveLevel()) )
+
 #handler= HandlerTxt()
-handler= HandlerSimpleGUI()
-client= Client(None, handler)
-parser= CardDataParser()
+handler= HandlerSimpleGUI(logger.getEffectiveLevel())
+client= Client(None, handler, logger.getEffectiveLevel())
+#parser= CardDataParser()
 cc = CardConnector(client, logger.getEffectiveLevel())
 status= None
 EXIT_SUCCESS=0
 EXIT_FAILURE=1
-               
+             
 # TODO list:
 #versioning
 # authentikey image
@@ -75,17 +66,16 @@ EXIT_FAILURE=1
 class SatochipBridge(WebSocket):
     
     def handleMessage(self):
-        global cc, parser, status, EXIT_SUCCESS, EXIT_FAILURE
-        print("In handleMessage()")
-        print("DATA: "+str(type(self.data))+"  "+self.data)
+        global cc, parser, status, EXIT_SUCCESS, EXIT_FAILURE, logger
+        logger.debug("In handleMessage()")
+        logger.debug("Data: "+str(type(self.data))+"  "+self.data)
 
         # parse msg
         try: 
             msg= json.loads(self.data)          
             action= msg["action"]
         except Exception as e:
-            print("In handleMessage(): exception code 1")
-            print(repr(e))
+            logger.warning("exception: "+repr(e))
             
         try:
             if (action=="get_status"):
@@ -95,19 +85,19 @@ class SatochipBridge(WebSocket):
                 status['exitstatus']= EXIT_SUCCESS
                 reply= json.dumps(status)
                 self.sendMessage(reply)
-                print("REPLY: "+reply)
+                logger.debug("Reply: "+reply)    
                                 
             elif (action=="get_chaincode"):
                 path= msg["path"]
-                (depth, bytepath)= parser.bip32path2bytes(path)
-                (pubkey, chaincode)= cc.card_bip32_get_extendedkey(bytepath)
+                #(depth, bytepath)= parser.bip32path2bytes(path)
+                (pubkey, chaincode)= cc.card_bip32_get_extendedkey(path)
                 # convert to string
                 pubkey= pubkey.get_public_key_hex(False) # non-compressed hexstring
                 chaincode= chaincode.hex() # hexstring
                 d= {'requestID':msg["requestID"], 'action':msg["action"], 'pubkey':pubkey, 'chaincode':chaincode, 'exitstatus':EXIT_SUCCESS}
                 reply= json.dumps(d)
                 self.sendMessage(reply)
-                print("REPLY: "+reply)
+                logger.debug("Reply: "+reply)    
                 
                 # #DEBUG
                 # paths=["m/44'/1'/0'/0", "m/44'/60'/0'/0", "m/44'/61'/0'/0", "m/44'/1'/0'/1", "m/44'/60'/0'/1", "m/44'/61'/0'/1", 
@@ -127,10 +117,10 @@ class SatochipBridge(WebSocket):
             
                 # prepare key corresponding to desired path
                 path= msg["path"]
-                (depth, bytepath)= parser.bip32path2bytes(path)
-                (pubkey, chaincode)= cc.card_bip32_get_extendedkey(bytepath)
-                print("SIGN with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
-                print("SIGN with hash: "+ msg["hash"])
+                #(depth, bytepath)= parser.bip32path2bytes(path)
+                (pubkey, chaincode)= cc.card_bip32_get_extendedkey(path)
+                logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
+                logger.debug("Sign hash: "+ msg["hash"])
                 keynbr=0xFF
                 
                 if cc.needs_2FA:
@@ -140,8 +130,8 @@ class SatochipBridge(WebSocket):
                     d={}
                     d['msg_encrypt']= msg_2FA
                     d['id_2FA']= id_2FA
-                    print("encrypted message: "+msg_2FA)
-                    print("id_2FA: "+id_2FA)
+                    logger.debug("encrypted message: "+msg_2FA)
+                    logger.debug("id_2FA: "+ id_2FA)
                     
                     #do challenge-response with 2FA device...
                     notif= '2FA request sent! Approve or reject request on your second device.'
@@ -154,7 +144,7 @@ class SatochipBridge(WebSocket):
                     except Exception as e:
                         cc.client.request('show_error', "No response received from 2FA...")
                     reply_decrypt= cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    print("challenge:response= "+ reply_decrypt)
+                    logger.debug("challenge:response= "+ reply_decrypt)
                     reply_decrypt= reply_decrypt.split(":")
                     chalresponse=reply_decrypt[1]   
                     hmac= list(bytes.fromhex(chalresponse))
@@ -167,7 +157,7 @@ class SatochipBridge(WebSocket):
                         'exitstatus':EXIT_FAILURE, 'reason':'Signing request rejected by 2FA'}
                     reply= json.dumps(d)
                     self.sendMessage(reply)
-                    print("REPLY: "+reply)
+                    logger.debug("Reply: "+reply)    
                 else:
                     hash= list(bytes.fromhex(msg["hash"]))
                     (response, sw1, sw2)=cc.card_sign_transaction_hash(keynbr, hash, hmac)
@@ -185,19 +175,19 @@ class SatochipBridge(WebSocket):
                     # print("DEBUG: s_old=", s)
                     
                     # convert sig to rsv format:
-                    print("convert sig to rsv format...")
+                    logger.debug ("Convert sig to rsv format...")
                     try: 
                         #compsig= parser.parse_hash_signature(response, bytes.fromhex(msg["hash"]), pubkey)
-                        (r,s,v, sigstring)= parser.parse_rsv_from_dersig(bytes(response), bytes.fromhex(msg["hash"]), pubkey) 
+                        (r,s,v, sigstring)= cc.parser.parse_rsv_from_dersig(bytes(response), bytes.fromhex(msg["hash"]), pubkey) 
                         # r,s,v:int convert to hex (64-char padded with 0)
                         r= "{0:0{1}x}".format(r,64) 
                         s= "{0:0{1}x}".format(s,64) 
-                        print ("sigstring", sigstring.hex())
-                        print ("r", r)
-                        print ("s", s)
-                        print ("v", v)
+                        logger.debug("sigstring: " + sigstring.hex())
+                        logger.debug ("r= " + r)
+                        logger.debug ("s= " + s)
+                        logger.debug ("v= " + str(v))
                     except Exception as e:
-                        print("[handleMessage] in parse_rsv_from_dersig: ", repr(e)) 
+                        logger.warning("Exception in parse_rsv_from_dersig: " + repr(e)) 
                         
                     # #old    
                     # (r2,s2,v2)= parser.parse_compact_sig_to_rsv(compsig) #r2,s2: bytes
@@ -237,16 +227,16 @@ class SatochipBridge(WebSocket):
                                 'exitstatus':EXIT_SUCCESS}
                     reply= json.dumps(d)
                     self.sendMessage(reply)
-                    print("REPLY: "+reply)    
+                    logger.debug("Reply: "+reply)    
                 
             else:
                 d= {'requestID':msg['requestID'], 'action':msg['action'], 'exitstatus':EXIT_FAILURE, 'reason':'Action unknown'}
                 reply= json.dumps(d)
                 self.sendMessage(reply)
-                print("UNKNOWN ACTION: "+action)
+                logger.warning("Unknown action: "+action)
                 
         except Exception as e:
-            print('[handleMessage] Exception: ',repr(e))
+            logger.warning('Exception: ' + repr(e))
             cc.client.request('show_error','[handleMessage] Exception: '+repr(e))
             
             # try:
@@ -258,19 +248,21 @@ class SatochipBridge(WebSocket):
     
     #TODO: Only one connection at a time?
     def handleConnected(self):
-        global cc, parser, status
-        print(self.address, 'connected')
+        global cc, parser, status, logger
+        logger.debug('In handleConnected')
+        logger.info(repr(self.address) + 'connected')
         
         # check origin (see https://github.com/ipython/ipython/pull/4845/files)        
         try: 
             ver= self.request.headers.get("Sec-WebSocket-Version")
-            print("In handleMessage(): got ws version:"+str(ver))
+            logger.debug("got ws version:"+str(ver))
             if ver  in ("7", "8"):
                 origin_header = self.request.headers.get("Sec-Websocket-Origin")
             else:
                 origin_header = self.request.headers.get("Origin")
         except Exception as e:
-            print(repr(e))    
+            logger.warning('Exception: ' + repr(e))
+            
         # Set origin in electron: https://github.com/getsentry/sentry-electron/issues/176 / 
         # https://github.com/arantes555/electron-fetch/issues/16
         # https://github.com/electron/electron/issues/7931
@@ -281,16 +273,15 @@ class SatochipBridge(WebSocket):
                                                     "\n\nApprove connection?")
         is_approved= cc.client.request('yes_no_question', msg)
         if not is_approved:
-            print("Connection to Satochip was rejected!")
-            #self.handleClose()
+            logger.info("Connection to Satochip was rejected!")
             self.close()
             return
         
         try:
-            cc.card_init_connect()
+            cc.client.card_init_connect()
         except Exception as e:
             cc.client.request('show_error','[handleConnected] Exception:'+repr(e))
-            print('[handleConnected] Exception:'+repr(e))
+            logger.warning('Exception:'+repr(e))
             # try:
                 # cc.card_disconnect()
                 # cc = CardConnector(parser)
@@ -299,12 +290,12 @@ class SatochipBridge(WebSocket):
                 # print(repr(e))
 
     def handleClose(self):
-        global cc, parser
-        print(self.address, 'closed')
+        global logger
+        logger.info(self.address + 'closed')
         
         
 #debug
-#cc.card_init_connect()
+#cc.client.card_init_connect()
 #cc.client.handler.seed_wizard()
 #cc.client.handler.QRDialog(20*"00", None, "Satochip-Bridge: QR Code", True, "2FA: ")
 #cc.client.handler.choose_seed_action()
@@ -315,15 +306,13 @@ class SatochipBridge(WebSocket):
 #cc.client.handler.restore_from_seed()
 
 def my_threaded_func(server):
-    #time.sleep(10) # delay server until system tray is ready
     server.serveforever()
     
-print("Launching server!")
+logger.info("Launching server...")
 server = SimpleWebSocketServer('', 8000, SatochipBridge)
 thread = threading.Thread(target=my_threaded_func, args=(server,))
 thread.start()
-print("Server launched!")
+logger.info("Server launched!")
 
-print("Running system tray!")
+logger.info("Launching system tray...")
 cc.client.create_system_tray(cc.card_present)
-
