@@ -25,6 +25,7 @@ RUN apt-get update -q && \
         libpcsclite-dev=1.8.14-1ubuntu1.16.04.1 \
         swig=3.0.8-0ubuntu3 \
         qt5-default \
+        xclip \
         && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get autoremove -y && \

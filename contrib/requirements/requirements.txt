@@ -4,10 +4,10 @@ mnemonic==0.19
 pyperclip==1.7.0
 eth-keys==0.3.1
 eth-utils==1.8.4
-ecdsa==0.14.1
+ecdsa==0.15
 SimpleWebSocketServer==0.1.1
 pyscard==1.9.9
-pysatochip
+pysatochip==0.11.2
 
 # GUI
 PySimpleGUIQt==0.31.0

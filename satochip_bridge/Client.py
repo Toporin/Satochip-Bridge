@@ -134,10 +134,7 @@ class Client:
                 v_applet= d["protocol_version"] 
                 logger.info(f"Satochip version={hex(v_applet)} Electrum supported version= {hex(v_supported)}")#debugSatochip
                 if (v_supported<v_applet):
-                    # msg=(_('The version of your Satochip is higher than supported by Electrum. You should update Electrum to ensure correct functioning!')+ '\n' 
-                                # + f'    Satochip version: {d["protocol_major_version"]}.{d["protocol_minor_version"]}' + '\n' 
-                                # + f'    Supported version: {CardConnector.SATOCHIP_PROTOCOL_MAJOR_VERSION}.{CardConnector.SATOCHIP_PROTOCOL_MINOR_VERSION}')
-                    msg=(_('The version of your Satochip is higher than supported by Electrum. You should update Electrum to ensure correct functioning!')+ '\n' 
+                    msg=(('The version of your Satochip is higher than supported by Electrum. You should update Electrum to ensure correct functioning!')+ '\n' 
                                 + f'    Satochip version: {d["protocol_major_version"]}.{d["protocol_minor_version"]}' + '\n' 
                                 + f'    Supported version: {SATOCHIP_PROTOCOL_MAJOR_VERSION}.{SATOCHIP_PROTOCOL_MINOR_VERSION}')
                     self.request('show_error', msg)
@@ -150,9 +147,9 @@ class Client:
             # setup device (done only once)
             else:
                 # PIN dialog
-                msg = _("Enter a new PIN for your Satochip:")
-                msg_confirm = _("Please confirm the PIN code for your Satochip:")
-                msg_error = _("The PIN values do not match! Please type PIN again!")
+                msg = ("Enter a new PIN for your Satochip:")
+                msg_confirm = ("Please confirm the PIN code for your Satochip:")
+                msg_error = ("The PIN values do not match! Please type PIN again!")
                 (is_PIN, pin_0)= self.PIN_setup_dialog(msg, msg_confirm, msg_error)
                 if not is_PIN:
                     raise RuntimeError('A PIN code is required to initialize the Satochip!')
@@ -199,14 +196,14 @@ class Client:
                 authentikey= self.cc.card_bip32_import_seed(seed)
                 if authentikey:
                     self.request('show_success','Seed successfully imported to Satochip!')
+                    hex_authentikey= authentikey.get_public_key_hex(compressed=True)
+                    logger.info(f"Authentikey={hex_authentikey}")
                 else:
                     self.request('show_error','Error when importing seed to Satochip!')
             else: #if cancel
                 self.request('show_message','Seed import cancelled!')
-                
-        hex_authentikey= authentikey.get_public_key_hex(compressed=True)
-        logger.info(f"Authentikey={hex_authentikey}")
-     
+        
+        
     def init_2FA(self):
         logger.debug("In init_2FA")
         if not self.cc.needs_2FA:
@@ -277,7 +274,6 @@ class Client:
                     state= 'state_confirm_seed'
                 else: #Back
                     state= 'state_choose_seed_action'
-                    break
             
             elif (state=='state_request_passphrase'):                        
                 (event, values)= self.request('request_passphrase')

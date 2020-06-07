@@ -265,7 +265,7 @@ class HandlerSimpleGUI:
         return (event, values)
         
     def restore_from_seed(self):
-        logger.debug('In confirm_passphrase')
+        logger.debug('In restore_from_seed')
         from mnemonic import Mnemonic
         MNEMONIC = Mnemonic(language="english")
         
@@ -278,12 +278,13 @@ class HandlerSimpleGUI:
         window = sg.Window("Satochip-Bridge: Enter seed", layout, icon=self.satochip_icon)        
         while True:
             event, values = window.read()    
-            if event=='Back' or event=='Next' :
+            if event=='Next' :
                 if not MNEMONIC.check(values['seed']):# check that seed is valid
                     self.client.request('show_error', "Invalid BIP39 seed! Please type again!")
                 else:
                     break            
-        
+            else: #  event=='Back'
+                break
         window.close()
         del window
         
