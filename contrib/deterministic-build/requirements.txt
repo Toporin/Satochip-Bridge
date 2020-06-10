@@ -1,0 +1,58 @@
+ecdsa==0.15 \
+    --hash=sha256:867ec9cf6df0b03addc8ef66b56359643cb5d0c1dc329df76ba7ecfe256c8061 \
+    --hash=sha256:8f12ac317f8a1318efa75757ef0a651abe12e51fc1af8838fb91079445227277 \
+    # via -r reqs.txt, pysatochip
+mnemonic==0.19 \
+    --hash=sha256:4e37eb02b2cbd56a0079cabe58a6da93e60e3e4d6e757a586d9f23d96abea931 \
+    --hash=sha256:a8d78c5100acfa7df9bab6b9db7390831b0e54490934b718ff9efd68f0d731a6 \
+    # via -r reqs.txt
+pyaes==1.6.1 \
+    --hash=sha256:02c1b1405c38d3c370b085fb952dd8bea3fadcee6411ad99f312cc129c536d8f \
+    # via -r reqs.txt, pysatochip
+pyperclip==1.7.0 \
+    --hash=sha256:979325468ccf682104d5dcaf753f869868100631301d3e72f47babdea5700d1c \
+    # via -r reqs.txt
+pypng==0.0.20 \
+    --hash=sha256:1032833440c91bafee38a42c38c02d00431b24c42927feb3e63b104d8550170b \
+    # via -r reqs.txt
+pyqrcode==1.2.1 \
+    --hash=sha256:1b2812775fa6ff5c527977c4cd2ccb07051ca7d0bc0aecf937a43864abe5eff6 \
+    --hash=sha256:fdbf7634733e56b72e27f9bce46e4550b75a3a2c420414035cae9d9d26b234d5 \
+    # via -r reqs.txt
+pysatochip==0.11.2 \
+    --hash=sha256:52317953c4d4968a6184c2da7a802d8aa50977ba85f39475ba360e4e78063e17 \
+    --hash=sha256:c9b21b2bf9c001e9cb6e78aae3d242f1db72907d8cf7377aa818688d7d436ed1 \
+    # via -r reqs.txt
+pyscard==1.9.9 \
+    --hash=sha256:6620a74f58d5fa9076544263bb4e42c946eb20f315c896d14a7e5743d5431469 \
+    --hash=sha256:a047738c58d05b4dab15aa9c99fbd92f8d0670900de89c68bec247a422f8d8c7 \
+    --hash=sha256:c213a94585a48f8f1ff3c36c06fa3a162d2fd7f2c89240ac632bd38a3fa5df9b \
+    --hash=sha256:e6bde541990183858740793806b1c7f4e798670519ae4c96145f35d5d7944c20 \
+    # via -r reqs.txt, pysatochip
+pyside2==5.15.0 \
+    --hash=sha256:1478ea8a1ab5d8bc021ce41211933fbc238338fe70c02f7bcc2e80ea900dbf9e \
+    --hash=sha256:2d72150f63025b9b55097c1a64d09da37ff9191f73f69237500dec7a4a130541 \
+    --hash=sha256:7c91a5074f3c60bac7e9336943a1dc9d5c8be8ab88a232dc55018e555dae81b2 \
+    --hash=sha256:ae8158d611a410c58091aa8baf24005894b4e3f40c63ff2482149481ad5395b4 \
+    --hash=sha256:de0220cc01a8bfdaa8ccd0fc934a1ead2aedca62b49b5fd4bdcdaba6f4585a03 \
+    --hash=sha256:f9099e49fb2d3571f5a81eb9ff281ce832ce8c333052e8175e2356b9c3e4a882 \
+    # via pysimpleguiqt
+pysimpleguiqt==0.31.0 \
+    --hash=sha256:b1552414e70591fcb094af3a1a7ffce13325722c5fc12030c1c58fcecacc6b3b \
+    --hash=sha256:d0828ba84b7f6ef6a1ec2eff8344aee80d81df8f84ae0bdcffaeda1966bee34e \
+    # via -r reqs.txt
+shiboken2==5.15.0 \
+    --hash=sha256:0826ce788fe55bce19a8f8a2c33d720a6ba8f59e1aab1fa9d7a53eceed3f3af5 \
+    --hash=sha256:19d5f715e5ae8a815a7f148a8614a3225dceee6fd9d5decaa7749657f0f7ccbe \
+    --hash=sha256:41a9157fb9cc7e0c0747926b25c23c3f94d59d61736a6ff763ebc7acf6afc5cf \
+    --hash=sha256:4b0904e0967356a36e80cde05981faa14c120141856d973ee983eac0b83633c0 \
+    --hash=sha256:5702e77ad5999ac45498c3cd47f5d078ce7406cf8dc8df74337b0cdc084bf762 \
+    --hash=sha256:a92c55363d5cd3cfdd6cd28dcf91e81a00a3aa5bb177d712817c09d26bd760db \
+    # via pyside2
+simplewebsocketserver==0.1.1 \
+    --hash=sha256:d01ecd996d4e3b91e710c6ffaabe7b04661213d6c30e5c626395704de9cf0d5e \
+    # via -r reqs.txt
+six==1.15.0 \
+    --hash=sha256:30639c035cdb23534cd4aa2dd52c3bf48f06e5f4a941509c8bafd8ce11080259 \
+    --hash=sha256:8b74bedcbbbaca38ff6d7491d76f2b06b3592611af620f8426e82dddb04a5ced \
+    # via -r reqs.txt, ecdsa

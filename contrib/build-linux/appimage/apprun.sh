@@ -11,6 +11,5 @@ export LDFLAGS="-L${APPDIR}/usr/lib/x86_64-linux-gnu -L${APPDIR}/usr/lib"
 #debug satochip-bridge
 export PYTHONPATH="${APPDIR}/usr/lib/python3.6/site-packages:$PYTHONPATH"
 
-#exec "${APPDIR}/usr/bin/python3.6" -s "${APPDIR}/usr/bin/electrum" "$@"
 #exec "${APPDIR}/usr/bin/python3.6" -s "${APPDIR}/usr/bin/SatochipBridge.py" "$@"
 exec "${APPDIR}/usr/bin/python3.6" -s "${APPDIR}/usr/lib/python3.6/site-packages/satochip_bridge/SatochipBridge.py" "$@"

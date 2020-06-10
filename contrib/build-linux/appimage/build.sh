@@ -69,14 +69,7 @@ tar xf "$CACHEDIR/Python-$PYTHON_VERSION.tar.xz" -C "$BUILDDIR"
 # info "DEBUG: check if QT5 present?"
 # apt list qt5-default -a
 
-# info "DEBUG building tkinter"
-# apt-get download python3-tk
-# find *.deb -exec dpkg-deb -x {} . \;
-# rm *deb
-# --with-tcltk-includes 
-# --with-tcltk-libs 
-	  # --with-tcltk-includes="-I/usr/include" \
-	  # --with-tcltk-libs="-L/usr/lib64 -ltcl8.5 -L/usr/lib64 -ltk8.5" \
+
 
 info "Building squashfskit"
 git clone "https://github.com/squashfskit/squashfskit.git" "$BUILDDIR/squashfskit"
@@ -86,29 +79,6 @@ git clone "https://github.com/squashfskit/squashfskit.git" "$BUILDDIR/squashfski
     make -C squashfs-tools mksquashfs || fail "Could not build squashfskit"
 )
 MKSQUASHFS="$BUILDDIR/squashfskit/squashfs-tools/mksquashfs"
-
-#todo: remove?
-# info "building libsecp256k1."
-# (
-    # git clone https://github.com/bitcoin-core/secp256k1 "$CACHEDIR"/secp256k1 \
-        # || (cd "$CACHEDIR"/secp256k1 && git reset --hard && git pull)
-    # cd "$CACHEDIR"/secp256k1
-    # git reset --hard "$LIBSECP_VERSION"
-    # git clean -f -x -q
-    # export SOURCE_DATE_EPOCH=1530212462
-    # echo "LDFLAGS = -no-undefined" >> Makefile.am
-    # ./autogen.sh
-    # ./configure \
-      # --prefix="$APPDIR/usr" \
-      # --enable-module-recovery \
-      # --enable-experimental \
-      # --enable-module-ecdh \
-      # --disable-jni \
-      # -q
-    # make -j4 -s || fail "Could not build libsecp"
-    # make -s install > /dev/null || fail "Could not install libsecp"
-# )
-
 
 appdir_python() {
   env \
@@ -123,24 +93,6 @@ python='appdir_python'
 info "installing pip."
 "$python" -m ensurepip
 
-
-# info "preparing electrum-locale."
-# (
-    # cd "$PROJECT_ROOT"
-    # git submodule update --init
-
-    # pushd "$CONTRIB"/deterministic-build/electrum-locale
-    # if ! which msgfmt > /dev/null 2>&1; then
-        # fail "Please install gettext"
-    # fi
-    # for i in ./locale/*; do
-        # dir="$PROJECT_ROOT/electrum/$i/LC_MESSAGES"
-        # mkdir -p $dir
-        # msgfmt --output-file="$dir/electrum.mo" "$i/electrum.po" || true
-    # done
-    # popd
-# )
-
 #todo
 info "installing Satochip-Bridge and its dependencies."
 mkdir -p "$CACHEDIR/pip_cache"
@@ -148,19 +100,12 @@ mkdir -p "$CACHEDIR/pip_cache"
 #"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/requirements/requirements-hw.txt"
 #"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/deterministic-build/requirements.txt"
 #"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/deterministic-build/requirements-binaries.txt"
-#"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/deterministic-build/requirements-hw.txt"
-#"$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" -r "$CONTRIB/deterministic-build/requirements-satochip.txt"
 
 info "installing Satochip-Bridge."
 "$python" -m pip install --no-warn-script-location --cache-dir "$CACHEDIR/pip_cache" "$PROJECT_ROOT"
 
 #debug: test python & pysimplegui
 #$python
-
-# Satochip
-# info "copying zbar"
-# cp "/usr/lib/x86_64-linux-gnu/libzbar.so.0" "$APPDIR/usr/lib/libzbar.so.0"
-
 
 # info "desktop integration."
 cp "$PROJECT_ROOT/satochip_bridge.desktop" "$APPDIR/satochip_bridge.desktop"

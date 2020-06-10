@@ -4,6 +4,7 @@ import PySimpleGUIQt as sg
 import base64    
 import getpass
 import pyperclip
+from pyperclip import PyperclipException
 #import sys
 import os
 import logging
@@ -196,7 +197,11 @@ class HandlerSimpleGUI:
             if event=='Back' or event=='Next' :
                 break
             elif event=='Copy seed to clipboard':
-                pyperclip.copy(seed)
+                try:
+                    pyperclip.copy(seed)
+                except PyperclipException as e:
+                    logger.warning("PyperclipException: "+ str(e))
+                    self.client.request('show_error', "PyperclipException: "+ str(e))
         window.close()
         del window
         

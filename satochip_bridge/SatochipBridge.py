@@ -3,30 +3,27 @@ import threading
 import time
 import logging
 import sys
-
-from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 from os import urandom
 
+from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
+
+
 from pysatochip.CardConnector import CardConnector, UninitializedSeedError
-#from pysatochip.CardDataParser import CardDataParser
 from pysatochip.JCconstants import JCconstants
 from pysatochip.Satochip2FA import Satochip2FA
 from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
 
-#from pysatochip.TxParser import TxParser
-#from pysatochip.ecc import ECPubkey, CURVE_ORDER, der_sig_from_r_and_s, get_r_and_s_from_der_sig
+# from Client import Client
+# from handler import HandlerTxt, HandlerSimpleGUI
 
-from Client import Client
-from handler import HandlerTxt, HandlerSimpleGUI
-
-# try: 
-    # from Client import Client
-    # from handler import HandlerTxt, HandlerSimpleGUI
-# except Exception as e:
-    # print("Import exception")
-    # print(repr(e))
-    # from satochip_bridge.Client import Client
-    # from satochip_bridge.handler import HandlerTxt, HandlerSimpleGUI
+try: 
+    from Client import Client
+    from handler import HandlerTxt, HandlerSimpleGUI
+except Exception as e:
+    print("Import exception")
+    print(repr(e))
+    from satochip_bridge.Client import Client
+    from satochip_bridge.handler import HandlerTxt, HandlerSimpleGUI
 
 # try:
     # from eth_keys import keys, KeyAPI
@@ -47,17 +44,15 @@ logger.warning("A loglevel: "+ str(logger.getEffectiveLevel()) )
 #handler= HandlerTxt()
 handler= HandlerSimpleGUI(logger.getEffectiveLevel())
 client= Client(None, handler, logger.getEffectiveLevel())
-#parser= CardDataParser()
 cc = CardConnector(client, logger.getEffectiveLevel())
 status= None
 EXIT_SUCCESS=0
 EXIT_FAILURE=1
              
 # TODO list:
-#versioning
 # authentikey image
-# Logging
 # Daemon mode
+# logging & versioning
 # DONE: Support 2FA
 # DONE Check origin and host (+ whitelist?)
 # DONE GUI
@@ -98,20 +93,6 @@ class SatochipBridge(WebSocket):
                 reply= json.dumps(d)
                 self.sendMessage(reply)
                 logger.debug("Reply: "+reply)    
-                
-                # #DEBUG
-                # paths=["m/44'/1'/0'/0", "m/44'/60'/0'/0", "m/44'/61'/0'/0", "m/44'/1'/0'/1", "m/44'/60'/0'/1", "m/44'/61'/0'/1", 
-                                # "m/44'/1'/0'/0/0", "m/44'/60'/0'/0/0", "m/44'/61'/0'/0/0", "m/44'/1'/0'/1/0", "m/44'/60'/0'/1/0", "m/44'/61'/0'/1/0",
-                                # "m/44'/1'/0'/0/1", "m/44'/60'/0'/0/1", "m/44'/61'/0'/0/1", "m/44'/1'/0'/1/1", "m/44'/60'/0'/1/1", "m/44'/61'/0'/1/1",]
-                # for path in paths:
-                    # (depth, bytepath)= parser.bip32path2bytes(path)
-                    # (pubkey, chaincode)= cc.card_bip32_get_extendedkey(bytepath)
-                    # pubkey_bytes= pubkey.get_public_key_bytes(compressed=False)[1:] # non-compressed hexstring
-                    # pubkey_hex= pubkey_bytes.hex() # non-compressed hexstring
-                    # ethpubkey= KeyAPI.PublicKey(pubkey_bytes)
-                    # print(" PATH:"+ path)
-                    # print(" PUBKEY:"+ pubkey_hex)
-                    # print(" ADDRESS:"+ ethpubkey.to_address())
                 
             elif (action=="sign_tx_hash") or (action=="sign_msg_hash"):
             
@@ -162,18 +143,6 @@ class SatochipBridge(WebSocket):
                     hash= list(bytes.fromhex(msg["hash"]))
                     (response, sw1, sw2)=cc.card_sign_transaction_hash(keynbr, hash, hmac)
                     
-                    # ## enforce low-S signature (BIP 62)
-                    # tx_sig = bytearray(response)
-                    # r,s= get_r_and_s_from_der_sig(tx_sig) #r,s:long int
-                    # if s > CURVE_ORDER//2:
-                        # print('DEBUG: S is higher than CURVE_ORDER//2')
-                        # s = CURVE_ORDER - s
-                        # tx_sig=der_sig_from_r_and_s(r, s)
-                    # r= format(r, 'x') #hex
-                    # s= format(s, 'x')
-                    # print("DEBUG: r_old=", r)
-                    # print("DEBUG: s_old=", s)
-                    
                     # convert sig to rsv format:
                     logger.debug ("Convert sig to rsv format...")
                     try: 
@@ -188,40 +157,7 @@ class SatochipBridge(WebSocket):
                         logger.debug ("v= " + str(v))
                     except Exception as e:
                         logger.warning("Exception in parse_rsv_from_dersig: " + repr(e)) 
-                        
-                    # #old    
-                    # (r2,s2,v2)= parser.parse_compact_sig_to_rsv(compsig) #r2,s2: bytes
-                    # print ("compsig", compsig.hex())
-                    # print("DEBUG: r2=", r2.hex())
-                    # print("DEBUG: s2=", s2.hex())
-                    # print("DEBUG: v2=", v2)
-                    
-                    # # debug eth-keys
-                    # print("    => =========== ETH-KEYS ============")
-                    # latest_pubkey_bytes= pubkey.get_public_key_bytes(compressed=False)[1:]
-                    # print("    => latest_pubkey_bytes:"+latest_pubkey_bytes.hex())
-                    # ethpubkey= KeyAPI.PublicKey(latest_pubkey_bytes)
-                    # print("    => latest_pubkey_address:"+ethpubkey.to_address())
-                    # # recover pubkey from sig & hash
-                    # ethcompsig= parser.parse_compact_sig_to_ethcompsig(compsig)
-                    # print("    => ethcompsig:"+ethcompsig.hex())
-                    # sig1= KeyAPI.Signature(signature_bytes=ethcompsig)
-                    # ethpubkeyrec= KeyAPI.PublicKey.recover_from_msg_hash(bytes.fromhex(msg["hash"]), sig1)
-                    # print("    => sig1:"+sig1.to_bytes().hex())
-                    # print("    => recovered_pubkey:"+ethpubkeyrec.to_bytes().hex())
-                    # print("    => recovered_pubkey_address:"+ethpubkeyrec.to_address())
-                    # print("    => recovered_pubkey_checksum_address:"+ethpubkeyrec.to_checksum_address())
-                    # #sig2=  KeyAPI.Signature(vrs)
-                    # ethcompsig2= ethcompsig
-                    # ethcompsig2[-1]= 0x00 if ethcompsig[-1]== 0x01 else 0x01
-                    # sig2= KeyAPI.Signature(signature_bytes=ethcompsig2)
-                    # ethpubkeyrec2= KeyAPI.PublicKey.recover_from_msg_hash(bytes.fromhex(msg["hash"]), sig2)
-                    # print("    => sig2:"+sig2.to_bytes().hex())
-                    # print("    => recovered_pubkey2:"+ethpubkeyrec2.to_bytes().hex())
-                    # print("    => recovered_pubkey_address:"+ethpubkeyrec2.to_address())
-                    # print("    => recovered_pubkey_checksum_address:"+ethpubkeyrec2.to_checksum_address())
-                    # print("    => =========== ETH-KEYS ============")
-
+                      
                     d= {'requestID':msg["requestID"], 'action':msg["action"], "hash":msg["hash"], 
                                 "sig":sigstring.hex(), "r":r, "s":s, "v":v, "pubkey":pubkey.get_public_key_bytes().hex(),
                                 'exitstatus':EXIT_SUCCESS}
