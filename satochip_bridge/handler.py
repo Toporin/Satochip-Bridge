@@ -5,7 +5,7 @@ import base64
 import getpass
 import pyperclip
 from pyperclip import PyperclipException
-#import sys
+import sys
 import os
 import logging
 from queue import Queue 
@@ -58,7 +58,13 @@ class HandlerSimpleGUI:
         logger.debug("In __init__")
         sg.theme('BluePurple')
         # absolute path to python package folder of satochip_bridge ("lib")
-        self.pkg_dir = os.path.split(os.path.realpath(__file__))[0]
+        #self.pkg_dir = os.path.split(os.path.realpath(__file__))[0] # does not work with packaged .exe 
+        if getattr( sys, 'frozen', False ):
+            # running in a bundle
+            self.pkg_dir= sys._MEIPASS # for pyinstaller
+        else :
+            # running live
+            self.pkg_dir = os.path.split(os.path.realpath(__file__))[0]
         logger.debug("PKGDIR= " + str(self.pkg_dir))
         self.satochip_icon= self.icon_path("satochip.png") #"satochip.png"
         self.satochip_unpaired_icon= self.icon_path("satochip_unpaired.png") #"satochip_unpaired.png"

@@ -20,8 +20,7 @@ try:
     from Client import Client
     from handler import HandlerTxt, HandlerSimpleGUI
 except Exception as e:
-    print("Import exception")
-    print(repr(e))
+    print('ImportError: '+repr(e))
     from satochip_bridge.Client import Client
     from satochip_bridge.handler import HandlerTxt, HandlerSimpleGUI
 

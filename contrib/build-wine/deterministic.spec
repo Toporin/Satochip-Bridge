@@ -89,13 +89,26 @@ exe_standalone = EXE(
     a.scripts,
     a.binaries,
     a.datas,
-    name=os.path.join('build\\pyi.win32\\electrum', cmdline_name + ".exe"),
+    name=os.path.join('build\\pyi.win32\\electrum', cmdline_name + "console.exe"),
     debug=False,
     strip=None,
     upx=False,
     icon=home+'satochip_bridge/gui/icons/electrum.ico', #home+'electrum/gui/icons/electrum.ico',
     console=True)
     # console=True makes an annoying black box pop up, but it does make Electrum output command line commands, with this turned off no output will be given but commands can still be used
+
+exe_standalone = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    name=os.path.join('build\\pyi.win32\\electrum', cmdline_name + ".exe"),
+    debug=False,
+    strip=None,
+    upx=False,
+    icon=home+'satochip_bridge/gui/icons/electrum.ico', #home+'electrum/gui/icons/electrum.ico',
+    console=False)
+
 
 coll = COLLECT(
     exe_dependent,

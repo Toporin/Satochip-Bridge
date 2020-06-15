@@ -1,6 +1,6 @@
 #!/bin/bash
 
-NAME_ROOT=electrum
+NAME_ROOT= SatochipBridge #electrum
 
 # These settings probably don't need any change
 export WINEPREFIX=/opt/wine64
@@ -46,7 +46,8 @@ info "Running pyinstaller..."
 # ls
 # ls ../..
 #wine "$PYHOME/scripts/pyinstaller.exe" --noconfirm --ascii --clean --name $NAME_ROOT-$VERSION -w deterministic.spec
-wine "$PYHOME/scripts/pyinstaller.exe" -cD --clean --additional-hooks-dir=. --add-data "../../satochip_bridge/*.png;."  "../../satochip_bridge/SatochipBridge.py" -i "../../satochip_bridge/satochip.ico" 
+wine "$PYHOME/scripts/pyinstaller.exe" -cF --clean --name SatochipBridge-console-v.exe --additional-hooks-dir=. --add-data "../../satochip_bridge/*.png;."  "../../satochip_bridge/SatochipBridge.py" -i "../../satochip_bridge/satochip.ico" 
+wine "$PYHOME/scripts/pyinstaller.exe" -wF --clean --name SatochipBridge-v.exe --additional-hooks-dir=. --add-data "../../satochip_bridge/*.png;."  "../../satochip_bridge/SatochipBridge.py" -i "../../satochip_bridge/satochip.ico" 
 
 # set timestamps in dist, in order to make the installer reproducible
 pushd dist
