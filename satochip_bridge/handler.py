@@ -320,9 +320,9 @@ class HandlerSimpleGUI:
         self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&Enable 2FA', '&About', '&Quit']]
         
         if card_present:
-            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_icon) #self.tray = sg.SystemTray(menu=self.menu_def, filename=r'satochip.png')
+            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_icon) 
         else:
-            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_unpaired_icon) #self.tray = sg.SystemTray(menu=self.menu_def, filename=r'satochip_unpaired.png')
+            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_unpaired_icon) 
 
         while True:
             menu_item = self.tray.Read(timeout=1)

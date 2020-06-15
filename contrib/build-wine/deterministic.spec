@@ -18,9 +18,10 @@ home = 'C:\\electrum\\'
 hiddenimports = []
 hiddenimports += collect_submodules('websocket')
 hiddenimports += collect_submodules('smartcard') 
+#hiddenimports += collect_submodules('PySimpleGUIQt.SystemTray') 
 
 # Add libusb binary
-binaries = [(PYHOME+"/libusb-1.0.dll", ".")]
+#binaries = [(PYHOME+"/libusb-1.0.dll", ".")]
 
 # Workaround for "Retro Look":
 #binaries += [b for b in collect_dynamic_libs('PyQt5') if 'qwindowsvista' in b[0]]
@@ -29,14 +30,13 @@ binaries = [(PYHOME+"/libusb-1.0.dll", ".")]
 binaries += [('C:/python*/Lib/site-packages/smartcard/scard/_scard.cp36-win32.pyd', '.')] #satochip
 
 datas = [
-	(home+'satochip_bridge/*.png', 'electrum'),
-    #(home+'electrum/*.json', 'electrum'),
-    #(home+'electrum/wordlist/english.txt', 'electrum/wordlist'),
-    #(home+'electrum/locale', 'electrum/locale'),
-    #(home+'electrum/plugins', 'electrum/plugins'),
-    #('C:\\Program Files (x86)\\ZBar\\bin\\', '.'),
-    #(home+'electrum/gui/icons', 'electrum/gui/icons')
+	(home+'satochip_bridge/*.png', '.'),
 ]
+
+# Hook for the mnemonic package: https://pypi.org/project/mnemonic/
+#datas2= collect_data_files('mnemonic')
+datas+= collect_data_files('mnemonic')
+print('Datas= '+repr(datas))
 
 # We don't put these files in to actually include them in the script but to make the Analysis method scan them for imports
 a = Analysis([
@@ -96,32 +96,6 @@ exe_standalone = EXE(
     icon=home+'satochip_bridge/gui/icons/electrum.ico', #home+'electrum/gui/icons/electrum.ico',
     console=True)
     # console=True makes an annoying black box pop up, but it does make Electrum output command line commands, with this turned off no output will be given but commands can still be used
-
-exe_portable = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.datas + [ ('is_portable', 'README.md', 'DATA' ) ],
-    name=os.path.join('build\\pyi.win32\\electrum', cmdline_name + "-portable.exe"),
-    debug=False,
-    strip=None,
-    upx=False,
-    icon=home+'satochip_bridge/gui/icons/electrum.ico', #home+'electrum/gui/icons/electrum.ico',
-    console=False)
-
-#####
-# exe and separate files that NSIS uses to build installer "setup" exe
-
-exe_dependent = EXE(
-    pyz,
-    a.scripts,
-    exclude_binaries=True,
-    name=os.path.join('build\\pyi.win32\\electrum', cmdline_name),
-    debug=False,
-    strip=None,
-    upx=False,
-    icon=home+'satochip_bridge/gui/icons/electrum.ico', #home+'electrum/gui/icons/electrum.ico',
-    console=False)
 
 coll = COLLECT(
     exe_dependent,

@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Please update these carefully, some versions won't work under Wine
-NSIS_FILENAME=nsis-3.04-setup.exe
-NSIS_URL=https://prdownloads.sourceforge.net/nsis/$NSIS_FILENAME?download
-NSIS_SHA256=4e1db5a7400e348b1b46a4a11b6d9557fd84368e4ad3d4bc4c1be636c89638aa
+# NSIS_FILENAME=nsis-3.04-setup.exe
+# NSIS_URL=https://prdownloads.sourceforge.net/nsis/$NSIS_FILENAME?download
+# NSIS_SHA256=4e1db5a7400e348b1b46a4a11b6d9557fd84368e4ad3d4bc4c1be636c89638aa
 
-LIBUSB_FILENAME=libusb-1.0.22.7z
-LIBUSB_URL=https://prdownloads.sourceforge.net/project/libusb/libusb-1.0/libusb-1.0.22/$LIBUSB_FILENAME?download
-LIBUSB_SHA256=671f1a420757b4480e7fadc8313d6fb3cbb75ca00934c417c1efa6e77fb8779b
+# LIBUSB_FILENAME=libusb-1.0.22.7z
+# LIBUSB_URL=https://prdownloads.sourceforge.net/project/libusb/libusb-1.0/libusb-1.0.22/$LIBUSB_FILENAME?download
+# LIBUSB_SHA256=671f1a420757b4480e7fadc8313d6fb3cbb75ca00934c417c1efa6e77fb8779b
 
 PYINSTALLER_REPO="https://github.com/SomberNight/pyinstaller.git"
 PYINSTALLER_COMMIT=d1cdd726d6a9edc70150d5302453fb90fdd09bf2
@@ -67,16 +67,16 @@ download_if_not_exist $PYSCARD_FILENAME "$PYSCARD_URL"
 verify_hash $PYSCARD_FILENAME "$PYSCARD_SHA256"
 $PYTHON -m pip install "$CACHEDIR/$PYSCARD_FILENAME"
 
-info "Installing NSIS."
-download_if_not_exist "$CACHEDIR/$NSIS_FILENAME" "$NSIS_URL"
-verify_hash "$CACHEDIR/$NSIS_FILENAME" "$NSIS_SHA256"
-wine "$CACHEDIR/$NSIS_FILENAME" /S
+# info "Installing NSIS."
+# download_if_not_exist "$CACHEDIR/$NSIS_FILENAME" "$NSIS_URL"
+# verify_hash "$CACHEDIR/$NSIS_FILENAME" "$NSIS_SHA256"
+# wine "$CACHEDIR/$NSIS_FILENAME" /S
 
-info "Installing libusb."
-download_if_not_exist "$CACHEDIR/$LIBUSB_FILENAME" "$LIBUSB_URL"
-verify_hash "$CACHEDIR/$LIBUSB_FILENAME" "$LIBUSB_SHA256"
-7z x -olibusb "$CACHEDIR/$LIBUSB_FILENAME" -aoa
-cp libusb/MS32/dll/libusb-1.0.dll $WINEPREFIX/drive_c/$PYTHON_FOLDER/
+# info "Installing libusb."
+# download_if_not_exist "$CACHEDIR/$LIBUSB_FILENAME" "$LIBUSB_URL"
+# verify_hash "$CACHEDIR/$LIBUSB_FILENAME" "$LIBUSB_SHA256"
+# 7z x -olibusb "$CACHEDIR/$LIBUSB_FILENAME" -aoa
+# cp libusb/MS32/dll/libusb-1.0.dll $WINEPREFIX/drive_c/$PYTHON_FOLDER/
 
 # mkdir -p $WINEPREFIX/drive_c/tmp
 # cp "$CACHEDIR/secp256k1/libsecp256k1.dll" $WINEPREFIX/drive_c/tmp/

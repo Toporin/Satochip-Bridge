@@ -29,13 +29,13 @@ find -exec touch -d '2000-11-11T11:11:11+00:00' {} +
 popd
 
 # Install frozen dependencies
-info "Pip installing dependencies"
+#info "Pip installing dependencies"
 #$PYTHON -m pip install --no-warn-script-location -r "$CONTRIB"/deterministic-build/requirements.txt
 # $PYTHON -m pip install --no-warn-script-location -r "$CONTRIB"/deterministic-build/requirements-hw.txt
 
 pushd $WINEPREFIX/drive_c/electrum
 # see https://github.com/pypa/pip/issues/2195 -- pip makes a copy of the entire directory
-info "Pip installing Electrum. This might take a long time if the project folder is large."
+info "Pip installing SatochipBrige. This might take a long time if the project folder is large."
 $PYTHON -m pip install --no-warn-script-location .
 popd
 
@@ -43,20 +43,16 @@ rm -rf dist/
 
 # build standalone and portable versions
 info "Running pyinstaller..."
-wine "$PYHOME/scripts/pyinstaller.exe" --noconfirm --ascii --clean --name $NAME_ROOT-$VERSION -w deterministic.spec
+# ls
+# ls ../..
+#wine "$PYHOME/scripts/pyinstaller.exe" --noconfirm --ascii --clean --name $NAME_ROOT-$VERSION -w deterministic.spec
+wine "$PYHOME/scripts/pyinstaller.exe" -cD --clean --additional-hooks-dir=. --add-data "../../satochip_bridge/*.png;."  "../../satochip_bridge/SatochipBridge.py" -i "../../satochip_bridge/satochip.ico" 
 
 # set timestamps in dist, in order to make the installer reproducible
 pushd dist
 find -exec touch -d '2000-11-11T11:11:11+00:00' {} +
 popd
 
-info "building NSIS installer"
-# $VERSION could be passed to the electrum.nsi script, but this would require some rewriting in the script itself.
-wine "$WINEPREFIX/drive_c/Program Files (x86)/NSIS/makensis.exe" /DPRODUCT_VERSION=$VERSION electrum.nsi
-
-cd dist
-mv electrum-setup.exe $NAME_ROOT-$VERSION-setup.exe
-cd ..
 
 info "Padding binaries to 8-byte boundaries, and fixing COFF image checksum in PE header"
 # note: 8-byte boundary padding is what osslsigncode uses:
@@ -100,4 +96,4 @@ EOF
     done
 )
 
-sha256sum dist/electrum*.exe
+sha256sum dist/Satochip*.exe
