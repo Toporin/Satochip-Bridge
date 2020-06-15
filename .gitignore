@@ -3,3 +3,11 @@ satochip_bridge/__pycache__/
 dist/
 contrib/build-linux/appimage/build/
 contrib/build-linux/appimage/.cache/
+contrib/build-wine/.cache/
+contrib/build-wine/dist/
+contrib/build-wine/build/
+contrib/build-wine/*.spec
+contrib/build-windows/dist/
+contrib/build-windows/build/
+contrib/build-windows/__pycache__/
+contrib/build-windows/*.spec

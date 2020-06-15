@@ -1,0 +1,4 @@
+PySide2 <= 5.15.0 
+#PyQt5<5.12
+#pycryptodomex<3.8
+#PyQt5-sip<=4.19.13

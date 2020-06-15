@@ -1,53 +1,55 @@
-#import PySimpleGUI as sg   
-#import PySimpleGUIWx as sg 
-import PySimpleGUIQt as sg 
-import base64    
-import getpass
-import pyperclip
 import threading
+import logging
+from os import urandom
 from queue import Queue 
-import sys
-import os
 
-try: 
-    from Satochip2FA import Satochip2FA
-    from CardConnector import CardConnector, UninitializedSeedError
-except Exception as e:
-    print("Import exception")
-    print(repr(e))
-    from satochip_bridge.Satochip2FA import Satochip2FA
-    from satochip_bridge.CardConnector import CardConnector, UninitializedSeedError
-    
-    
+from pysatochip.CardConnector import CardConnector, UninitializedSeedError
+from pysatochip.JCconstants import JCconstants
+from pysatochip.Satochip2FA import Satochip2FA
+from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+MSG_USE_2FA= ("Do you want to use 2-Factor-Authentication (2FA)?\n\n"
+                "With 2FA, any transaction must be confirmed on a second device such as \n"
+               "your smartphone. First you have to install the Satochip-2FA android app on \n"
+               "google play. Then you have to pair your 2FA device with your Satochip \n"
+               "by scanning the qr-code on the next screen. \n"
+               "Warning: be sure to backup a copy of the qr-code in a safe place, \n"
+               "in case you have to reinstall the app!")
+               
 class Client:
 
-    def __init__(self, cc, handler):
+    def __init__(self, cc, handler, loglevel= logging.WARNING):
+        logger.setLevel(loglevel)
+        logger.debug("In __init__")
         self.handler = handler
         self.handler.client= self
         self.queue_request= Queue()
         self.queue_reply= Queue()
-        self.cc= None
+        self.cc= cc
        
     def create_system_tray(self, card_present):
         self.handler.system_tray(card_present)
     
     def request(self, request_type, *args):
-        print('[Client] client request: '+ str(request_type))
+        logger.debug('Client request: '+ str(request_type))
         
         # bypass queue-based data exchange between main GUI thread and   
         # server thread when request comes directly from the main thread.
         if threading.current_thread() is threading.main_thread():
             #TODO: check if handler exist
-            print('[Client] IN MAIN THREAD!')
+            logger.debug('In main thread:')
             method_to_call = getattr(self.handler, request_type)
-            print('Type of method_to_call: '+ str(type(method_to_call)))
-            print('method_to_call: '+ str(method_to_call))
+            #logger.debug('Type of method_to_call: '+ str(type(method_to_call)))
+            #logger.debug('Method_to_call: '+ str(method_to_call))
             reply = method_to_call(*args)
             return reply 
         
         # we use a queue to exchange request between the server thread and the main (GUI) thread
         self.queue_request.put((request_type, args))
-        print('[Client] IN SECOND THREAD!')
+        logger.debug('In second thread:')
         
         # Get some data 
         try:
@@ -112,8 +114,129 @@ class Client:
                 self.request('show_error', msg_error)
             else:
                 return (True, oldpin, newpin)
-     
+    
+    ########################################
+    #             Setup functions                              #
+    ########################################
+    
+    def card_init_connect(self):
+        logger.info("ATR: "+str(self.cc.card_get_ATR()))
+        #response, sw1, sw2 = self.card_select() #TODO: remove?
+        
+        # check setup
+        while(self.cc.card_present):
+            (response, sw1, sw2, d)=self.cc.card_get_status()
+            
+            # check version
+            if  (self.cc.setup_done):
+                #v_supported= CardConnector.SATOCHIP_PROTOCOL_VERSION 
+                v_supported= SATOCHIP_PROTOCOL_VERSION 
+                v_applet= d["protocol_version"] 
+                logger.info(f"Satochip version={hex(v_applet)} Electrum supported version= {hex(v_supported)}")#debugSatochip
+                if (v_supported<v_applet):
+                    msg=(('The version of your Satochip is higher than supported by Electrum. You should update Electrum to ensure correct functioning!')+ '\n' 
+                                + f'    Satochip version: {d["protocol_major_version"]}.{d["protocol_minor_version"]}' + '\n' 
+                                + f'    Supported version: {SATOCHIP_PROTOCOL_MAJOR_VERSION}.{SATOCHIP_PROTOCOL_MINOR_VERSION}')
+                    self.request('show_error', msg)
+                
+                if (self.cc.needs_secure_channel):
+                    self.cc.card_initiate_secure_channel()
+                
+                break 
+                
+            # setup device (done only once)
+            else:
+                # PIN dialog
+                msg = ("Enter a new PIN for your Satochip:")
+                msg_confirm = ("Please confirm the PIN code for your Satochip:")
+                msg_error = ("The PIN values do not match! Please type PIN again!")
+                (is_PIN, pin_0)= self.PIN_setup_dialog(msg, msg_confirm, msg_error)
+                if not is_PIN:
+                    raise RuntimeError('A PIN code is required to initialize the Satochip!')
+                    
+                pin_0= list(pin_0)
+                pin_tries_0= 0x05;
+                ublk_tries_0= 0x01;
+                # PUK code can be used when PIN is unknown and the card is locked
+                # We use a random value as the PUK is not used currently and is not user friendly
+                ublk_0= list(urandom(16)); 
+                pin_tries_1= 0x01
+                ublk_tries_1= 0x01
+                pin_1= list(urandom(16)); #the second pin is not used currently
+                ublk_1= list(urandom(16));
+                secmemsize= 32 # number of slot reserved in memory cache
+                memsize= 0x0000 # RFU
+                create_object_ACL= 0x01 # RFU
+                create_key_ACL= 0x01 # RFU
+                create_pin_ACL= 0x01 # RFU
+                
+                #setup
+                (response, sw1, sw2)=self.cc.card_setup(pin_tries_0, ublk_tries_0, pin_0, ublk_0,
+                        pin_tries_1, ublk_tries_1, pin_1, ublk_1, 
+                        secmemsize, memsize, 
+                        create_object_ACL, create_key_ACL, create_pin_ACL)
+                if sw1!=0x90 or sw2!=0x00:       
+                    logger.warning(f"Unable to set up applet!  sw12={hex(sw1)} {hex(sw2)}")#debugSatochip
+                    raise RuntimeError('Unable to setup the device with error code:'+hex(sw1)+' '+hex(sw2))
+            
+        # verify pin:
+        self.cc.card_verify_PIN()
+        
+        # get authentikey
+        try:
+            authentikey=self.cc.card_bip32_get_authentikey()
+        except UninitializedSeedError:
+            # Option: setup 2-Factor-Authentication (2FA)
+            self.init_2FA()
+                    
+            # seed dialog...
+            (mnemonic, passphrase, seed)= self.seed_wizard()                    
+            if seed:
+                seed= list(seed)
+                authentikey= self.cc.card_bip32_import_seed(seed)
+                if authentikey:
+                    self.request('show_success','Seed successfully imported to Satochip!')
+                    hex_authentikey= authentikey.get_public_key_hex(compressed=True)
+                    logger.info(f"Authentikey={hex_authentikey}")
+                else:
+                    self.request('show_error','Error when importing seed to Satochip!')
+            else: #if cancel
+                self.request('show_message','Seed import cancelled!')
+        
+        
+    def init_2FA(self):
+        logger.debug("In init_2FA")
+        if not self.cc.needs_2FA:
+            use_2FA=self.request('yes_no_question', MSG_USE_2FA)
+            if (use_2FA):
+                secret_2FA= urandom(20)
+                secret_2FA_hex=secret_2FA.hex()
+                amount_limit= 0 # i.e. always use 
+                try:
+                    # the secret must be shared with the second factor app (eg on a smartphone)
+                    msg= 'Scan this QR code on your second device \nand securely save a backup of this 2FA-secret: \n'+secret_2FA_hex
+                    (event, values)= self.request('QRDialog', secret_2FA_hex, None, "Satochip-Bridge: QR Code", True, msg)
+                    if event=='Ok':
+                        # further communications will require an id and an encryption key (for privacy). 
+                        # Both are derived from the secret_2FA using a one-way function inside the Satochip
+                        (response, sw1, sw2)=self.cc.card_set_2FA_key(secret_2FA, amount_limit)
+                        if sw1!=0x90 or sw2!=0x00:                 
+                            logger.warning("Unable to set 2FA!  sw12="+hex(sw1)+" "+hex(sw2))#debugSatochip
+                            self.request('show_error', 'Unable to setup 2FA with error code:'+hex(sw1)+' '+hex(sw2))
+                            #raise RuntimeError('Unable to setup 2FA with error code:'+hex(sw1)+' '+hex(sw2))
+                        else:
+                            self.request('show_success', '2FA enabled successfully!')
+                    else: # Cancel
+                        self.request('show_message', '2FA activation canceled!')
+                except Exception as e:
+                    logger.warning("Exception during 2FA activation: "+str(e))    
+                    self.request('show_error', 'Exception during 2FA activation: '+str(e))
+        else:
+            self.request('show_message', '2FA is already activated!')
+            
     def seed_wizard(self): 
+        logger.debug("In seed_wizard()") #debugSatochip
+            
         from mnemonic import Mnemonic
         # state: state_choose_seed_action - state_create_seed -  state_request_passphrase - state_confirm_seed  - state_confirm_passphrase - state_abort
         # state: state_choose_seed_action - state_restore_from_seed - state_request_passphrase - state_abort
@@ -151,7 +274,6 @@ class Client:
                     state= 'state_confirm_seed'
                 else: #Back
                     state= 'state_choose_seed_action'
-                    break
             
             elif (state=='state_request_passphrase'):                        
                 (event, values)= self.request('request_passphrase')
@@ -202,7 +324,7 @@ class Client:
                     state= 'state_choose_seed_action'
             
             else:
-                print('Error!')
+                logger.warning('State error!')
         
         if mnemonic is None:
             self.request('show_message', "Seed initialization aborted! \nYour Satochip may be unusable until a seed is created... \n Go to 'menu' -> 'Setup new Satochip' to complete setup")
@@ -213,505 +335,4 @@ class Client:
         #print('seed: '+str(seed.hex()))
         
         return (mnemonic, passphrase, seed)
-    
-class HandlerTxt:
-    def __init__(self):
-        pass
-
-    def update_status(self, isConnected):
-        if (isConnected):
-            print("Card connected!")
-        else:
-            print("Card disconnected!")
-
-    def show_error(self,msg):
-        print(msg)
-    
-    def show_success(self, msg):
-        print(msg)
-        
-    def show_message(self, msg):
-        print(msg)
-    
-    def yes_no_question(self, question):
-        while "the answer is invalid":
-            reply = str(input(question+' (y/n): ')).lower().strip()
-            if reply[0] == 'y':
-                return True
-            if reply[0] == 'n':
-                return False
-        
-    def get_passphrase(self, msg): 
-        is_PIN=True
-        pin = getpass.getpass(msg) #getpass returns a string
-        return (is_PIN, pin)
-        
-    def QRDialog(self, data, parent=None, title = '', show_text=False, msg= ''):
-        print(msg)
-
-class HandlerSimpleGUI:
-    def __init__(self): 
-        sg.theme('BluePurple')
-        # absolute path to python package folder of satochip_bridge ("lib")
-        self.pkg_dir = os.path.split(os.path.realpath(__file__))[0]
-        print("DEBUG PKGDIR= ", self.pkg_dir)
-        self.satochip_icon= self.icon_path("satochip.png") #"satochip.png"
-        self.satochip_unpaired_icon= self.icon_path("satochip_unpaired.png") #"satochip_unpaired.png"
-         
-    # def resource_path(*parts):
-        # return os.path.join(pkg_dir, *parts)
-
-    def icon_path(self, icon_basename):
-        #return resource_path(icon_basename)
-        return os.path.join(self.pkg_dir, icon_basename)
-    
-    def update_status(self, isConnected):
-        if (isConnected):
-            self.tray.update(filename=self.satochip_icon) #self.tray.update(filename=r'satochip.png')
-        else:
-            self.tray.update(filename=self.satochip_unpaired_icon) #self.tray.update(filename=r'satochip_unpaired.png')
-            
-    def show_error(self, msg):
-        sg.popup('Satochip-Bridge Error!', msg, icon=self.satochip_unpaired_icon)
-    def show_success(self, msg):
-        sg.popup('Satochip-Bridge Success!', msg, icon=self.satochip_icon)
-    def show_message(self, msg):
-        sg.popup('Satochip-Bridge Notification', msg, icon=self.satochip_icon)
-    def show_notification(self,msg):
-        print ("START show_notification")
-        #self.tray.ShowMessage("Satochip-Bridge notification", msg, filename=self.satochip_icon, time=10000)
-        self.tray.ShowMessage("Satochip-Bridge notification", msg, messageicon=sg.SYSTEM_TRAY_MESSAGE_ICON_INFORMATION, time=100000)
-        print ("END show_notification")
-    
-    def yes_no_question(self, question):
-               
-        layout = [[sg.Text(question)],      
-                        [sg.Button('Yes'), sg.Button('No')]]      
-        #window = sg.Window('Satochip-Bridge: Confirmation required', layout, icon=SatochipBase64)    #NOK
-        window = sg.Window('Satochip-Bridge: Confirmation required', layout, icon=self.satochip_icon)  #ok
-        #window = sg.Window('Satochip-Bridge: Confirmation required', layout, icon="satochip.ico")    #ok
-        event, value = window.read()    
-        window.close()  
-        del window
-        
-        print("Type of event from getpass:"+str(type(event))+str(event))
-        if event=='Yes':
-            return True
-        else: # 'No' or None
-            return False
-                
-    def get_passphrase(self, msg): 
-        
-        layout = [[sg.Text(msg)],      
-                         [sg.InputText(password_char='*', key='pin')],      
-                         [sg.Submit(), sg.Cancel()]]      
-        window = sg.Window('Satochip-Bridge: PIN required', layout, icon=self.satochip_icon)    
-        event, values = window.read()    
-        window.close()
-        del window
-        
-        is_PIN= True if event=='Submit' else False 
-        pin = values['pin']
-        print("Type of pin from getpass:"+str(type(pin)))
-        print("Type of event from getpass:"+str(type(event))+str(event))
-        return (is_PIN, pin)
-        
-    def QRDialog(self, data, parent=None, title = "Satochip-Bridge: QR code", show_text=False, msg= ''):
-        import pyqrcode
-        code = pyqrcode.create(data)
-        image_as_str = code.png_as_base64_str(scale=5, quiet_zone=2) #string
-        image_as_str= base64.b64decode(image_as_str) #bytes
-        
-        layout = [[sg.Image(data=image_as_str, tooltip=None, visible=True)],
-                        [sg.Text(msg)],
-                        [sg.Button('Ok'), sg.Button('Cancel'), sg.Button('Copy 2FA-secret to clipboard')]]     
-        window = sg.Window(title, layout, icon=self.satochip_icon)    
-        while True:
-            event, values = window.read()    
-            if event=='Ok' or event=='Cancel':
-                break
-            elif event=='Copy 2FA-secret to clipboard':
-                pyperclip.copy(data) 
-                
-        window.close()
-        del window
-        pyperclip.copy('') #purge 2FA from clipboard
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
-        return (event, values)
-    
-    def reset_seed_dialog(self, msg):
-        layout = [[sg.Text(msg)],
-                [sg.InputText(password_char='*', key='pin')], 
-                [sg.Checkbox('Also reset 2FA', key='reset_2FA')], 
-                [sg.Button('Ok'), sg.Button('Cancel')]]
-        window = sg.Window("Satochip-Bridge: Reset seed", layout, icon=self.satochip_icon)    
-        event, values = window.read()    
-        window.close()
-        del window
-        
-        # print("Event:"+str(type(event))+str(event))
-        # print("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Ok
-        #Values:<class 'dict'>{'passphrase': 'toto', 'reset_2FA': False}
-        return (event, values)
-    
-    ### SEED Config ###
-    def choose_seed_action(self):
-        
-        layout = [[sg.Text("Do you want to create a new seed, or to restore a wallet using an existing seed?")],
-                [sg.Radio('Create a new seed', 'radio1', key='create')], 
-                [sg.Radio('I already have a seed', 'radio1', key='restore')], 
-                [sg.Button('Cancel'), sg.Button('Next')]]
-        window = sg.Window("Satochip-Bridge: Create or restore seed", layout, icon=self.satochip_icon)        
-        event, values = window.read()    
-        window.close()
-        del window
-        
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'create': True, 'restore': False}
-        return (event, values)
-        
-    def create_seed(self, seed):    
-        
-        warning1= ("Please save these 12 words on paper (order is important). \nThis seed will allow you to recover your wallet in case of computer failure.")
-        warning2= ("WARNING:")
-        warning3= ("*Never disclose your seed.\n*Never type it on a website.\n*Do not store it electronically.")
-        
-        layout = [[sg.Text("Your wallet generation seed is:")],
-                [sg.Text(seed)], 
-                [sg.Checkbox('Extends this seed with custom words', key='use_passphrase')], 
-                [sg.Text(warning1)],
-                [sg.Text(warning2)],
-                [sg.Text(warning3)],
-                [sg.Button('Back'), sg.Button('Next'), sg.Button('Copy seed to clipboard')]]
-        window = sg.Window("Satochip-Bridge: Create seed", layout, icon=self.satochip_icon)        
-        while True:
-            event, values = window.read()    
-            if event=='Back' or event=='Next' :
-                break
-            elif event=='Copy seed to clipboard':
-                pyperclip.copy(seed)
-        window.close()
-        del window
-        
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'use_passphrase': False}
-        return (event, values)
-        
-    def request_passphrase(self):
-        
-        info1= ("You may extend your seed with custom words.\nYour seed extension must be saved together with your seed.")
-        info2=("Note that this is NOT your encryption password.\nIf you do not know what this is, leave this field empty.")
-        layout = [[sg.Text("Seed extension")],
-                [sg.Text(info1)], 
-                [sg.InputText(key='passphrase')], 
-                [sg.Text(info2)],
-                [sg.Button('Back'), sg.Button('Next')]]
-        window = sg.Window("Satochip-Bridge: Seed extension", layout, icon=self.satochip_icon)        
-        event, values = window.read()    
-        window.close()
-        del window
-        
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'passphrase': 'toto'}
-        return (event, values)
-        
-        
-    def confirm_seed(self):
-        pyperclip.copy('') #purge clipboard to ensure that seed is backuped
-        info1= ("Your seed is important! If you lose your seed, your money will be \npermanently lost. To make sure that you have properly saved your \nseed, please retype it here:")
-        layout = [[sg.Text("Confirm seed")],
-                [sg.Text(info1)], 
-                [sg.InputText(key='seed_confirm')], 
-                [sg.Button('Back'), sg.Button('Next')]]
-        window = sg.Window("Satochip-Bridge: Confirm seed", layout, icon=self.satochip_icon)        
-        event, values = window.read()    
-        window.close()
-        del window
-        
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'seed_confirm': 'AA ZZ'}
-        return (event, values)
-        
-    def confirm_passphrase(self):
-        info1= ("Your seed extension must be saved together with your seed.\nPlease type it here.")
-        layout = [[sg.Text("Confirm seed extension")],
-                [sg.Text(info1)], 
-                [sg.InputText(key='passphrase_confirm')], 
-                [sg.Button('Back'), sg.Button('Next')]]
-        window = sg.Window("Satochip-Bridge: Confirm seed extension", layout, icon=self.satochip_icon)        
-        event, values = window.read()    
-        window.close()
-        del window
-        
-        print("Event:"+str(type(event))+str(event))
-        print("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'seed_confirm': 'AA ZZ'}
-        return (event, values)
-        
-    def restore_from_seed(self):
-        from mnemonic import Mnemonic
-        MNEMONIC = Mnemonic(language="english")
-        
-        info1= ("Please enter your BIP39 seed phrase in order to restore your wallet.")
-        layout = [[sg.Text("Enter Seed")],
-                [sg.Text(info1)], 
-                [sg.InputText(key='seed')], 
-                [sg.Checkbox('Extends this seed with custom words', key='use_passphrase')], 
-                [sg.Button('Back'), sg.Button('Next')]]
-        window = sg.Window("Satochip-Bridge: Enter seed", layout, icon=self.satochip_icon)        
-        while True:
-            event, values = window.read()    
-            if event=='Back' or event=='Next' :
-                if not MNEMONIC.check(values['seed']):# check that seed is valid
-                    self.client.request('show_error', "Invalid BIP39 seed! Please type again!")
-                else:
-                    break            
-        
-        window.close()
-        del window
-        
-        # print("Event:"+str(type(event))+str(event))
-        # print("Values:"+str(type(values))+str(values))
-        return (event, values)
-    
-    # communicate with other threads through queues
-    def reply(self):    
-        
-        while not self.client.queue_request.empty(): 
-            print('Debug: check QUEUE NOT EMPTY')
-            (request_type, args)= self.client.queue_request.get()
-            print("Request in queue:", request_type)
-            for arg in args: 
-                print("Next argument through *args :", arg) 
-            
-            method_to_call = getattr(self, request_type)
-            print('Type of method_to_call: '+ str(type(method_to_call)))
-            print('method_to_call: '+ str(method_to_call))
-            
-            reply = method_to_call(*args)
-            self.client.queue_reply.put((request_type, reply))
-                
-    # system tray   
-    def system_tray(self, card_present):
-        self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&Enable 2FA', '&About', '&Quit']]
-        
-        if card_present:
-            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_icon) #self.tray = sg.SystemTray(menu=self.menu_def, filename=r'satochip.png')
-        else:
-            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_unpaired_icon) #self.tray = sg.SystemTray(menu=self.menu_def, filename=r'satochip_unpaired.png')
-
-        while True:
-            menu_item = self.tray.Read(timeout=1)
-            if menu_item != '__TIMEOUT__':
-                print(menu_item) 
-            
-            ## Setup new Satochip ##
-            if menu_item== 'Setup new Satochip':
-                self.client.cc.card_init_connect()
-            
-            ## Change PIN ##
-            elif menu_item== 'Change PIN':
-                msg_oldpin= ("Enter the current PIN for your Satochip:")
-                msg_newpin= ("Enter a new PIN for your Satochip:")
-                msg_confirm= ("Please confirm the new PIN for your Satochip:")
-                msg_error= ("The PIN values do not match! Please type PIN again!")
-                msg_cancel= ("PIN change cancelled!")
-                (is_PIN, oldpin, newpin)= self.client.PIN_change_dialog(msg_oldpin, msg_newpin, msg_confirm, msg_error, msg_cancel)
-                if not is_PIN:
-                    continue
-                else: 
-                    oldpin= list(oldpin)    
-                    newpin= list(newpin)  
-                    (response, sw1, sw2)= self.client.cc.card_change_PIN(0, oldpin, newpin)
-                    if (sw1==0x90 and sw2==0x00):
-                        msg= ("PIN changed successfully!")
-                        self.show_success(msg)
-                    else:
-                        msg= (f"Failed to change PIN with error code: {hex(sw1)}{hex(sw2)}")
-                        self.show_error(msg)
-             
-            ## Reset seed ##
-            elif menu_item== 'Reset seed':
-                msg = ''.join([
-                        ("WARNING!\n"),
-                        ("You are about to reset the seed of your Satochip. This process is irreversible!\n"),
-                        ("Please be sure that your wallet is empty and that you have a backup of the seed as a precaution.\n\n"),
-                        ("To proceed, enter the PIN for your Satochip:")
-                    ])
-                (event, values)= self.reset_seed_dialog(msg)
-                if event== 'Cancel':
-                    msg= ("Seed reset cancelled!")
-                    self.show_message(msg)
-                    continue
-                
-                pin= values['pin']
-                reset_2FA= values['reset_2FA']
-                pin= list(pin.encode('utf8'))
-                
-                # if 2FA is enabled, get challenge-response
-                hmac=[]
-                try: # todo: check if is_seeded
-                    self.client.cc.card_bip32_get_authentikey()
-                    self.client.cc.is_seeded=True
-                except UninitializedSeedError:
-                    self.client.cc.is_seeded=False
-                if self.client.cc.needs_2FA and self.client.cc.is_seeded: 
-                    # challenge based on authentikey
-                    authentikeyx= bytearray(self.client.cc.parser.authentikey_coordx).hex()
-                    
-                    # format & encrypt msg
-                    import json
-                    msg= {'action':"reset_seed", 'authentikeyx':authentikeyx}
-                    msg=  json.dumps(msg)
-                    (id_2FA, msg_out)= self.client.cc.card_crypt_transaction_2FA(msg, True)
-                    d={}
-                    d['msg_encrypt']= msg_out
-                    d['id_2FA']= id_2FA
-                    # print("encrypted message: "+msg_out)
-                    
-                    #do challenge-response with 2FA device...
-                    self.show_message('2FA request sent! Approve or reject request on your second device.')
-                    Satochip2FA.do_challenge_response(d)
-                    # decrypt and parse reply to extract challenge response
-                    try: 
-                        reply_encrypt= d['reply_encrypt']
-                    except Exception as e:
-                        self.show_error("No response received from 2FA...")
-                        continue
-                    reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    print("challenge:response= "+ reply_decrypt)
-                    reply_decrypt= reply_decrypt.split(":")
-                    chalresponse=reply_decrypt[1]
-                    hmac= list(bytes.fromhex(chalresponse))
-                
-                # send request 
-                (response, sw1, sw2) = self.client.cc.card_reset_seed(pin, hmac)
-                if (sw1==0x90 and sw2==0x00):
-                    msg= ("Seed reset successfully!\nYou can launch the wizard to setup your Satochip")
-                    self.show_success(msg)
-                else:
-                    msg= (f"Failed to reset seed with error code: {hex(sw1)}{hex(sw2)}")
-                    self.show_error(msg)
-                
-                # reset 2FA
-                if reset_2FA and self.client.cc.needs_2FA:     
-                    # challenge based on ID_2FA
-                    # format & encrypt msg
-                    import json
-                    msg= {'action':"reset_2FA"}
-                    msg=  json.dumps(msg)
-                    (id_2FA, msg_out)= self.client.cc.card_crypt_transaction_2FA(msg, True)
-                    d={}
-                    d['msg_encrypt']= msg_out
-                    d['id_2FA']= id_2FA
-                    # _logger.info("encrypted message: "+msg_out)
-                    
-                    #do challenge-response with 2FA device...
-                    self.client.handler.show_message('2FA request sent! Approve or reject request on your second device.')
-                    Satochip2FA.do_challenge_response(d)
-                    # decrypt and parse reply to extract challenge response
-                    try: 
-                        reply_encrypt= d['reply_encrypt']
-                    except Exception as e:
-                        self.show_error("No response received from 2FA...")
-                    reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    print("challenge:response= "+ reply_decrypt)
-                    reply_decrypt= reply_decrypt.split(":")
-                    chalresponse=reply_decrypt[1]
-                    hmac= list(bytes.fromhex(chalresponse))
-                    
-                    # send request 
-                    (response, sw1, sw2) = self.client.cc.card_reset_2FA_key(hmac)
-                    if (sw1==0x90 and sw2==0x00):
-                        self.client.cc.needs_2FA= False
-                        msg= ("2FA reset successfully!")
-                        self.show_success(msg)
-                    else:
-                        msg= (f"Failed to reset 2FA with error code: {hex(sw1)}{hex(sw2)}")
-                        self.show_error(msg)    
-            
-            ## Enable 2FA ##
-            elif menu_item== 'Enable 2FA':
-                self.client.cc.init_2FA()
-                continue
-             
-            ## About ##
-            elif menu_item== 'About':
-                #copyright
-                msg_copyright= ''.join([ '(c)2020 - Satochip by Toporin - https://github.com/Toporin/ \n',
-                                                        "This program is licensed under the GNU Affero General Public License v3.0 \n",
-                                                        "This software is provided 'as-is', without any express or implied warranty.\n",
-                                                        "In no event will the authors be held liable for any damages arising from \n"
-                                                        "the use of this software."])
-                #sw version
-                v_supported= (CardConnector.SATOCHIP_PROTOCOL_MAJOR_VERSION<<8)+CardConnector.SATOCHIP_PROTOCOL_MINOR_VERSION
-                sw_rel= str(CardConnector.SATOCHIP_PROTOCOL_MAJOR_VERSION) +'.'+ str(CardConnector.SATOCHIP_PROTOCOL_MINOR_VERSION)
-                fw_rel= "N/A"
-                is_seeded= "N/A"
-                needs_2FA= "N/A"
-                msg_status= ("Card is not initialized! \nClick on 'Setup new Satochip' in the menu to start configuration.")
-                    
-                (response, sw1, sw2, status)=self.client.cc.card_get_status()
-                if (sw1==0x90 and sw2==0x00):
-                    #hw version
-                    v_applet= (status["protocol_major_version"]<<8)+status["protocol_minor_version"] 
-                    fw_rel= str(status["protocol_major_version"]) +'.'+ str(status["protocol_minor_version"] )
-                    # status
-                    if (v_supported<v_applet):
-                        msg_status=('The version of your Satochip is higher than supported. \nYou should update Satochip-Bridge!')
-                    else:
-                        msg_status= 'Satochip-Bridge is up-to-date'
-                    # needs2FA?
-                    if len(response)>=9 and response[8]==0X01: 
-                        needs_2FA= "yes"
-                    elif len(response)>=9 and response[8]==0X00: 
-                        needs_2FA= "no"
-                    else:
-                        needs_2FA= "unknown"
-                    #is_seeded?
-                    try: 
-                        self.client.cc.card_bip32_get_authentikey()
-                        is_seeded="yes"
-                    except UninitializedSeedError:
-                        is_seeded="no"
-                    except Exception:
-                        is_seeded="unknown"    
-                        
-                frame_layout1= [[sg.Text('Supported Version: ', size=(20, 1)), sg.Text(sw_rel)],
-                                            [sg.Text('Firmware Version: ', size=(20, 1)), sg.Text(fw_rel)],
-                                            [sg.Text('Wallet is seeded: ', size=(20, 1)), sg.Text(is_seeded)],
-                                            [sg.Text('Requires 2FA: ', size=(20, 1)), sg.Text(needs_2FA)]]
-                frame_layout2= [[sg.Text(msg_status, justification='center', relief=sg.RELIEF_SUNKEN)]]
-                frame_layout3= [[sg.Text(msg_copyright, justification='center', relief=sg.RELIEF_SUNKEN)]]
-                layout = [[sg.Frame('Satochip', frame_layout1, font='Any 12', title_color='blue')],
-                              [sg.Frame('Satochip status', frame_layout2, font='Any 12', title_color='blue')],
-                              [sg.Frame('About Satochip-Bridge', frame_layout3, font='Any 12', title_color='blue')],
-                              [sg.Button('Ok')]]
-                
-                window = sg.Window('Satochip-Bridge: About', layout, icon=self.satochip_icon)    
-                event, value = window.read()    
-                window.close()  
-                del window
-                continue
-             
-            ## Quit ##
-            elif menu_item in (None, 'Quit'):
-                break
-                            
-            # check for handle requests from client through the queue
-            self.reply()
-         
-        # exit after leaving the loop
-        #sys.exit() # does not finish background thread
-        os._exit(0) # kill background thread but doesn't let the interpreter do any cleanup before the process dies
+ 
