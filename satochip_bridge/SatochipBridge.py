@@ -60,7 +60,7 @@ EXIT_FAILURE=1
 class SatochipBridge(WebSocket):
     
     def handleMessage(self):
-        global cc, parser, status, EXIT_SUCCESS, EXIT_FAILURE, logger
+        global cc, status, EXIT_SUCCESS, EXIT_FAILURE, logger
         logger.debug("In handleMessage()")
         logger.debug("Data: "+str(type(self.data))+"  "+self.data)
 
@@ -183,7 +183,7 @@ class SatochipBridge(WebSocket):
     
     #TODO: Only one connection at a time?
     def handleConnected(self):
-        global cc, parser, status, logger
+        global cc, status, logger
         logger.debug('In handleConnected')
         logger.info(repr(self.address) + 'connected')
         

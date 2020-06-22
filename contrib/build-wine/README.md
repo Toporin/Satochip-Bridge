@@ -2,6 +2,7 @@ Windows binaries
 ================
 
 **Work in progress: currently, the binaries generated are not deterministic! ** 
+
 ** These scripts are for building windows binaries on Linux.  See the folder 'build-windows' for windows script**
 
 ✓ _These binaries should be reproducible, meaning you should be able to generate

@@ -152,7 +152,10 @@ class Client:
                 msg_error = ("The PIN values do not match! Please type PIN again!")
                 (is_PIN, pin_0)= self.PIN_setup_dialog(msg, msg_confirm, msg_error)
                 if not is_PIN:
-                    raise RuntimeError('A PIN code is required to initialize the Satochip!')
+                    #raise RuntimeError('A PIN code is required to initialize the Satochip!')
+                    logger.warning('Initialization aborted: a PIN code is required to initialize the Satochip!')
+                    self.request('show_error', 'A PIN code is required to initialize the Satochip.\nInitialization aborted!')
+                    return
                     
                 pin_0= list(pin_0)
                 pin_tries_0= 0x05;
@@ -176,11 +179,18 @@ class Client:
                         secmemsize, memsize, 
                         create_object_ACL, create_key_ACL, create_pin_ACL)
                 if sw1!=0x90 or sw2!=0x00:       
-                    logger.warning(f"Unable to set up applet!  sw12={hex(sw1)} {hex(sw2)}")#debugSatochip
-                    raise RuntimeError('Unable to setup the device with error code:'+hex(sw1)+' '+hex(sw2))
+                    logger.warning(f"Unable to set up applet!  sw12={hex(sw1)} {hex(sw2)}")
+                    self.request('show_error', f"Unable to set up applet!  sw12={hex(sw1)} {hex(sw2)}")
+                    return
+                    #raise RuntimeError('Unable to setup the device with error code:'+hex(sw1)+' '+hex(sw2))
             
         # verify pin:
-        self.cc.card_verify_PIN()
+        try: 
+            self.cc.card_verify_PIN()
+        except RuntimeError as ex:
+            logger.warning(repr(ex))
+            self.request('show_error', repr(ex))
+            return
         
         # get authentikey
         try:
@@ -262,19 +272,22 @@ class Client:
                 needs_confirm= True
                 MNEMONIC = Mnemonic(language="english")
                 mnemonic = MNEMONIC.generate(strength=128)
-                if not MNEMONIC.check(mnemonic):
-                    raise ValueError("Invalid BIP39 seed!")
-                
-                (event, values)= self.request('create_seed', mnemonic)
-                if (event=='Next') and (values['use_passphrase'] is True):
-                    use_passphrase= True
-                    state= 'state_request_passphrase'
-                elif (event=='Next') and not values['use_passphrase']:
-                    use_passphrase= False
-                    state= 'state_confirm_seed'
-                else: #Back
+                if MNEMONIC.check(mnemonic):    
+                    (event, values)= self.request('create_seed', mnemonic)
+                    if (event=='Next') and (values['use_passphrase'] is True):
+                        use_passphrase= True
+                        state= 'state_request_passphrase'
+                    elif (event=='Next') and not values['use_passphrase']:
+                        use_passphrase= False
+                        state= 'state_confirm_seed'
+                    else: #Back
+                        state= 'state_choose_seed_action'
+                else:  #should not happen
+                    #raise ValueError("Invalid BIP39 seed!")
+                    logger.warning("Invalid BIP39 seed!")
+                    self.request('show_error', "Invalid BIP39 seed!")
                     state= 'state_choose_seed_action'
-            
+                
             elif (state=='state_request_passphrase'):                        
                 (event, values)= self.request('request_passphrase')
                 if (event=='Next'):
