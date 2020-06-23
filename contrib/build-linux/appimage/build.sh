@@ -205,11 +205,11 @@ find "$APPDIR" -path '*/__pycache__*' -delete
 # Import exception for eth_keys keyAPI
 # DistributionNotFound(Requirement.parse('eth-utils'), None)
 #for f in "$PYDIR"/site-packages/jsonschema-*.dist-info; do mv "$f" "$(echo "$f" | sed s/\.dist-info/\.dist-info2/)"; done
-for f in "$PYDIR"/site-packages/eth_utils-*.dist-info; do mv "$f" "$(echo "$f" | sed s/\.dist-info/\.dist-info2/)"; done
+#for f in "$PYDIR"/site-packages/eth_utils-*.dist-info; do mv "$f" "$(echo "$f" | sed s/\.dist-info/\.dist-info2/)"; done
 rm -rf "$PYDIR"/site-packages/*.dist-info/
 rm -rf "$PYDIR"/site-packages/*.egg-info/
 #for f in "$PYDIR"/site-packages/jsonschema-*.dist-info2; do mv "$f" "$(echo "$f" | sed s/\.dist-info2/\.dist-info/)"; done
-for f in "$PYDIR"/site-packages/eth_utils-*.dist-info2; do mv "$f" "$(echo "$f" | sed s/\.dist-info2/\.dist-info/)"; done
+#for f in "$PYDIR"/site-packages/eth_utils-*.dist-info2; do mv "$f" "$(echo "$f" | sed s/\.dist-info2/\.dist-info/)"; done
 
 find -exec touch -h -d '2000-11-11T11:11:11+00:00' {} +
 

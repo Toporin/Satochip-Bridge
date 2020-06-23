@@ -6,6 +6,7 @@ contrib/build-linux/appimage/.cache/
 contrib/build-wine/.cache/
 contrib/build-wine/dist/
 contrib/build-wine/build/
+contrib/build-wine/fresh_clone/
 contrib/build-wine/*.spec
 contrib/build-windows/dist/
 contrib/build-windows/build/

@@ -39,7 +39,7 @@ else:
 logger = logging.getLogger(__name__)
 #logger.setLevel(logging.DEBUG)
 
-logger.warning("A loglevel: "+ str(logger.getEffectiveLevel()) )
+logger.warning("loglevel: "+ str(logger.getEffectiveLevel()) )
 
 #handler= HandlerTxt()
 handler= HandlerSimpleGUI(logger.getEffectiveLevel())
@@ -262,7 +262,7 @@ def my_threaded_func(server):
     server.serveforever()
     
 logger.info("Launching server...")
-default_port= 8000#8397 # 'Sa' in ascii, as in 'Satochip!'
+default_port= 8397 # 'Sa' in ascii, as in 'Satochip!'
 server = SimpleWebSocketServer('', default_port, SatochipBridge)
 thread = threading.Thread(target=my_threaded_func, args=(server,))
 thread.start()
