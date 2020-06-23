@@ -3,6 +3,7 @@ import threading
 import time
 import logging
 import sys
+#import traceback
 from os import urandom
 
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
@@ -45,6 +46,8 @@ handler= HandlerSimpleGUI(logger.getEffectiveLevel())
 client= Client(None, handler, logger.getEffectiveLevel())
 cc = CardConnector(client, logger.getEffectiveLevel())
 status= None
+wallets = {}
+
 EXIT_SUCCESS=0
 EXIT_FAILURE=1
              
@@ -94,7 +97,7 @@ class SatochipBridge(WebSocket):
                 logger.debug("Reply: "+reply)    
                 
             elif (action=="sign_tx_hash") or (action=="sign_msg_hash"):
-            
+                
                 # prepare key corresponding to desired path
                 path= msg["path"]
                 #(depth, bytepath)= parser.bip32path2bytes(path)
@@ -130,11 +133,23 @@ class SatochipBridge(WebSocket):
                     hmac= list(bytes.fromhex(chalresponse))
                 else:
                     hmac=None
+                    logger.debug("Skip confirmation for this action? "+ str(wallets[self]) )
+                    if not wallets[self]: #if confirm required
+                        request_action= "sign a message" if action=="sign_msg_hash" else "sign a transaction"
+                        request_msg= ("A client wants to perform the following on your Satochip:"+
+                                                        "\n\tAction: "+ request_action +
+                                                        "\n\tAddress:"+ str(self.address)+
+                                                        "\n\nApprove action?")
+                        (event, values)= cc.client.request('approve_action', request_msg)
+                        if event== 'No' or event== 'None':
+                            hmac=20*[0] # will trigger reject   
+                        else:
+                            wallets[self]= values['skip_conf']
                 
-                if (hmac==20*[0]): # rejected by 2FA
+                if (hmac==20*[0]): # rejected by 2FA or user
                     d= {'requestID':msg["requestID"], 'action':msg["action"], "hash":msg["hash"], 
                         "sig":71*'00', "r":32*'00', "s":32*'00', "v":0 , "pubkey":pubkey.get_public_key_bytes().hex(),
-                        'exitstatus':EXIT_FAILURE, 'reason':'Signing request rejected by 2FA'}
+                        'exitstatus':EXIT_FAILURE, 'reason':'Signing request rejected by user'}
                     reply= json.dumps(d)
                     self.sendMessage(reply)
                     logger.debug("Reply: "+reply)    
@@ -173,13 +188,7 @@ class SatochipBridge(WebSocket):
         except Exception as e:
             logger.warning('Exception: ' + repr(e))
             cc.client.request('show_error','[handleMessage] Exception: '+repr(e))
-            
-            # try:
-                # cc.card_disconnect()
-                # cc = CardConnector(parser)
-            # except Exception as e:
-                # print("In handleMessage(): exception DD")
-                # print(repr(e))
+            #traceback.print_exc()
     
     #TODO: Only one connection at a time?
     def handleConnected(self):
@@ -203,14 +212,22 @@ class SatochipBridge(WebSocket):
         # https://github.com/electron/electron/issues/7931
         # https://github.com/skevy/graphiql-app/pull/66/files
         msg= ("A new device wants to connect to Satochip:"+
-                                                    "\nOrigin: "+ str(origin_header)+
-                                                    "\nAddress:"+ str(self.address)+
+                                                    "\n\tOrigin: "+ str(origin_header)+
+                                                    "\n\tAddress:"+ str(self.address)+
                                                     "\n\nApprove connection?")
-        is_approved= cc.client.request('yes_no_question', msg)
-        if not is_approved:
+        (event, values)= cc.client.request('approve_action', msg)
+        if event== 'No' or event== 'None':
             logger.info("Connection to Satochip was rejected!")
             self.close()
             return
+        wallets[self]= values['skip_conf']
+        logger.debug("Skip future confirmation for this connection? "+str(wallets[self]) )
+            
+        #is_approved= cc.client.request('yes_no_question', msg)
+        # if not is_approved:
+            # logger.info("Connection to Satochip was rejected!")
+            # self.close()
+            # return
         
         try:
             cc.client.card_init_connect()
@@ -221,11 +238,12 @@ class SatochipBridge(WebSocket):
                 # cc.card_disconnect()
                 # cc = CardConnector(parser)
             # except Exception as e:
-                # print("In handleConnected(): exception DD")
+                # print("In handleConnected(): exception")
                 # print(repr(e))
 
     def handleClose(self):
         global logger
+        wallets.pop(self)
         logger.info(self.address + 'closed')
         
         
@@ -244,10 +262,11 @@ def my_threaded_func(server):
     server.serveforever()
     
 logger.info("Launching server...")
-server = SimpleWebSocketServer('', 8000, SatochipBridge)
+default_port= 8000#8397 # 'Sa' in ascii, as in 'Satochip!'
+server = SimpleWebSocketServer('', default_port, SatochipBridge)
 thread = threading.Thread(target=my_threaded_func, args=(server,))
 thread.start()
-logger.info("Server launched!")
+logger.info(f"Server launched on port {default_port}!")
 
 logger.info("Launching system tray...")
 cc.client.create_system_tray(cc.card_present)
