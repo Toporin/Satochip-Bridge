@@ -214,13 +214,18 @@ class Client:
                 self.request('show_message','Seed import cancelled!')
         
         
-    def init_2FA(self):
+    def init_2FA(self, from_backup=False):
         logger.debug("In init_2FA")
         if not self.cc.needs_2FA:
             use_2FA=self.request('yes_no_question', MSG_USE_2FA)
             if (use_2FA):
-                secret_2FA= urandom(20)
-                secret_2FA_hex=secret_2FA.hex()
+                if (from_backup):
+                    (event, values)= self.request('import_2FA_backup')
+                    secret_2FA_hex= values['secret_2FA']
+                    secret_2FA= bytes.fromhex(secret_2FA_hex)
+                else:
+                    secret_2FA= urandom(20)
+                    secret_2FA_hex=secret_2FA.hex()
                 amount_limit= 0 # i.e. always use 
                 try:
                     # the secret must be shared with the second factor app (eg on a smartphone)
