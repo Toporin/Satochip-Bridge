@@ -221,6 +221,9 @@ class Client:
             if (use_2FA):
                 if (from_backup):
                     (event, values)= self.request('import_2FA_backup')
+                    if event == None or event == 'Cancel':
+                        self.request('show_message', '2FA activation canceled!')     
+                        return
                     secret_2FA_hex= values['secret_2FA']
                     secret_2FA= bytes.fromhex(secret_2FA_hex)
                 else:
