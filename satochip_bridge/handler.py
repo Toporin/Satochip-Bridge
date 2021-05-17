@@ -164,17 +164,13 @@ class HandlerSimpleGUI:
         logger.debug('In reset_seed_dialog')
         layout = [[sg.Text(msg)],
                 [sg.InputText(password_char='*', key='pin')], 
-                [sg.Checkbox('Also reset 2FA', key='reset_2FA')], 
+                #[sg.Checkbox('Also reset 2FA', key='reset_2FA')], 
                 [sg.Button('Ok'), sg.Button('Cancel')]]
         window = sg.Window("Satochip-Bridge: Reset seed", layout, icon=self.satochip_icon)    
         event, values = window.read()    
         window.close()
         del window
         
-        # logger.debug("Event:"+str(type(event))+str(event))
-        # logger.debug("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Ok
-        #Values:<class 'dict'>{'passphrase': 'toto', 'reset_2FA': False}
         return (event, values)
     
     ### SEED Config ###
@@ -314,6 +310,53 @@ class HandlerSimpleGUI:
         # logger.debug("Values:"+str(type(values))+str(values))
         return (event, values)
     
+    ### 2FA actions ###
+    def choose_2FA_action(self):
+        logger.debug('In choose_2FA_action')
+        layout = [
+                #[sg.Text("Do you want to create a new seed, or to restore a wallet using an existing seed?")],
+                [sg.Button('Enable 2FA')], 
+                [sg.Button('Reset 2FA')], 
+                [sg.Button('Enable 2FA from 2FA-secret backup')], 
+                [sg.Button('Reset 2FA from 2FA-secret backup')], 
+                [sg.Button('Cancel')],
+        ]
+        window = sg.Window("Satochip-Bridge: 2FA options", layout, icon=self.satochip_icon)        
+        event, values = window.read()    
+        window.close()
+        del window
+        return (event, values)
+    
+    def import_2FA_backup(self):
+        logger.debug('In import_2FA_backup')
+        layout = [
+            [sg.Text("Enter your 2FA-secret backup (40-hex characters) below")],
+            [sg.Text('Hex value: ', size=(10, 1)), sg.InputText(key='secret_2FA', size=(40, 1))],
+            [sg.Text(size=(40,1), key='-OUTPUT-')],
+            [sg.Submit(), sg.Cancel()],
+        ] 
+        window = sg.Window('Import 2FA-secret backup', layout, icon=self.satochip_icon)  #ok
+        #event, values=None, None
+        while True:                             
+            event, values = window.read() 
+            if event == None or event == 'Cancel':
+                break      
+            elif event == 'Submit':    
+                try:
+                    secret_2FA= values['secret_2FA']
+                    int(secret_2FA, 16) # check if correct hex
+                    secret_2FA= secret_2FA[secret_2FA.startswith("0x") and len("0x"):] #strip '0x' if need be
+                    if len(secret_2FA) != 40:
+                        raise ValueError(f"Wrong 2FA-secret size: {len(secret_2FA)}")
+                    values['secret_2FA']= secret_2FA
+                    break
+                except ValueError as ex: # wrong hex value
+                    window['-OUTPUT-'].update(str(ex)) #update('Error: seed should be an hex string with the correct length!')
+                
+        window.close()
+        del window
+        return event, values
+    
     # communicate with other threads through queues
     def reply(self):    
         
@@ -334,7 +377,7 @@ class HandlerSimpleGUI:
     # system tray   
     def system_tray(self, card_present):
         logger.debug('In system_tray')
-        self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&Enable 2FA', '&About', '&Quit']]
+        self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&2FA options', '&About', '&Quit']]
         
         if card_present:
             self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_icon) 
@@ -386,7 +429,7 @@ class HandlerSimpleGUI:
                     continue
                 
                 pin= values['pin']
-                reset_2FA= values['reset_2FA']
+                #reset_2FA= values['reset_2FA']
                 pin= list(pin.encode('utf8'))
                 
                 # if 2FA is enabled, get challenge-response
@@ -434,47 +477,170 @@ class HandlerSimpleGUI:
                     msg= (f"Failed to reset seed with error code: {hex(sw1)}{hex(sw2)}")
                     self.show_error(msg)
                 
-                # reset 2FA
-                if reset_2FA and self.client.cc.needs_2FA:     
-                    # challenge based on ID_2FA
-                    # format & encrypt msg
-                    import json
-                    msg= {'action':"reset_2FA"}
-                    msg=  json.dumps(msg)
-                    (id_2FA, msg_out)= self.client.cc.card_crypt_transaction_2FA(msg, True)
-                    d={}
-                    d['msg_encrypt']= msg_out
-                    d['id_2FA']= id_2FA
-                    # _logger.info("encrypted message: "+msg_out)
+                # Removed: 2FA-reset has its own menu option
+                # # reset 2FA
+                # if reset_2FA and self.client.cc.needs_2FA:     
+                    # # challenge based on ID_2FA
+                    # # format & encrypt msg
+                    # import json
+                    # msg= {'action':"reset_2FA"}
+                    # msg=  json.dumps(msg)
+                    # (id_2FA, msg_out)= self.client.cc.card_crypt_transaction_2FA(msg, True)
+                    # d={}
+                    # d['msg_encrypt']= msg_out
+                    # d['id_2FA']= id_2FA
+                    # # _logger.info("encrypted message: "+msg_out)
                     
-                    #do challenge-response with 2FA device...
-                    self.client.handler.show_message('2FA request sent! Approve or reject request on your second device.')
-                    Satochip2FA.do_challenge_response(d)
-                    # decrypt and parse reply to extract challenge response
-                    try: 
-                        reply_encrypt= d['reply_encrypt']
-                    except Exception as e:
-                        self.show_error("No response received from 2FA...")
-                    reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    logger.debug("challenge:response= "+ reply_decrypt)
-                    reply_decrypt= reply_decrypt.split(":")
-                    chalresponse=reply_decrypt[1]
-                    hmac= list(bytes.fromhex(chalresponse))
+                    # #do challenge-response with 2FA device...
+                    # self.client.handler.show_message('2FA request sent! Approve or reject request on your second device.')
+                    # Satochip2FA.do_challenge_response(d)
+                    # # decrypt and parse reply to extract challenge response
+                    # try: 
+                        # reply_encrypt= d['reply_encrypt']
+                    # except Exception as e:
+                        # self.show_error("No response received from 2FA...")
+                    # reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
+                    # logger.debug("challenge:response= "+ reply_decrypt)
+                    # reply_decrypt= reply_decrypt.split(":")
+                    # chalresponse=reply_decrypt[1]
+                    # hmac= list(bytes.fromhex(chalresponse))
                     
-                    # send request 
-                    (response, sw1, sw2) = self.client.cc.card_reset_2FA_key(hmac)
-                    if (sw1==0x90 and sw2==0x00):
-                        self.client.cc.needs_2FA= False
-                        msg= ("2FA reset successfully!")
-                        self.show_success(msg)
-                    else:
-                        msg= (f"Failed to reset 2FA with error code: {hex(sw1)}{hex(sw2)}")
-                        self.show_error(msg)    
+                    # # send request 
+                    # (response, sw1, sw2) = self.client.cc.card_reset_2FA_key(hmac)
+                    # if (sw1==0x90 and sw2==0x00):
+                        # self.client.cc.needs_2FA= False
+                        # msg= ("2FA reset successfully!")
+                        # self.show_success(msg)
+                    # else:
+                        # msg= (f"Failed to reset 2FA with error code: {hex(sw1)}{hex(sw2)} \nYou may have to reset the seed first.")
+                        # self.show_error(msg)    
             
             ## Enable 2FA ##
-            elif menu_item== 'Enable 2FA':
-                self.client.init_2FA()
-                continue
+            # elif menu_item== 'Enable 2FA':
+                # self.client.init_2FA()
+                # continue
+             
+            ## 2FA options ##
+            elif menu_item== '2FA options':
+                (event, values)= self.choose_2FA_action()
+                if event== 'Cancel':
+                    continue
+                elif event== 'Enable 2FA':
+                    self.client.init_2FA()
+                    continue
+                elif event== 'Enable 2FA from 2FA-secret backup':
+                    self.client.init_2FA(from_backup=True)
+                    continue
+                elif event== 'Reset 2FA':
+                    if self.client.cc.needs_2FA:     
+                        # challenge based on ID_2FA
+                        # format & encrypt msg
+                        import json
+                        msg= {'action':"reset_2FA"}
+                        msg=  json.dumps(msg)
+                        (id_2FA, msg_out)= self.client.cc.card_crypt_transaction_2FA(msg, True)
+                        d={}
+                        d['msg_encrypt']= msg_out
+                        d['id_2FA']= id_2FA
+                        
+                        #do challenge-response with 2FA device...
+                        self.show_message('2FA request sent! Approve or reject request on your second device.')
+                        Satochip2FA.do_challenge_response(d)
+                        # decrypt and parse reply to extract challenge response
+                        try: 
+                            reply_encrypt= d['reply_encrypt']
+                        except Exception as e:
+                            self.show_error("No response received from 2FA...")
+                        reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
+                        logger.debug("challenge:response= "+ reply_decrypt)
+                        reply_decrypt= reply_decrypt.split(":")
+                        chalresponse=reply_decrypt[1]
+                        hmac= list(bytes.fromhex(chalresponse))
+                        
+                        # send request 
+                        (response, sw1, sw2) = self.client.cc.card_reset_2FA_key(hmac)
+                        if (sw1==0x90 and sw2==0x00):
+                            self.client.cc.needs_2FA= False
+                            msg= ("2FA reset successfully!")
+                            self.show_success(msg)
+                        else:
+                            msg= (f"Failed to reset 2FA with error code: {hex(sw1)}{hex(sw2)}")
+                            self.show_error(msg)    
+                    else:
+                        self.show_error(f"Aborted: 2FA is not enabled on this device!")    
+                    continue
+                
+                elif event== 'Reset 2FA from 2FA-secret backup':
+                    # useful to deactivate 2FA if 2FA-app is unavailable
+                    if self.client.cc.needs_2FA:     
+                        import hmac
+                        from hashlib import sha1
+                        (events2, values2)= self.import_2FA_backup()
+                        secret_2FA_hex= values2['secret_2FA']
+                        secret_2FA_bytes=bytes.fromhex(secret_2FA_hex)
+                        
+                        # reset seed first (required for applet v<=0.11)
+                        # todo: check if really necessary to reset seed?
+                        try: # todo: check if is_seeded
+                            self.client.cc.card_bip32_get_authentikey()
+                            self.client.cc.is_seeded=True
+                        except UninitializedSeedError:
+                            self.client.cc.is_seeded=False
+                        
+                        if self.client.cc.is_seeded:
+                            msg = ''.join([
+                                    ("WARNING!\n"),
+                                    ("You are about to reset the seed of your Satochip. This process is irreversible!\n"),
+                                    ("Please be sure that your wallet is empty and that you have a backup of the seed as a precaution.\n\n"),
+                                    ("To proceed, enter the PIN for your Satochip:")
+                                ])
+                            (event3, values3)= self.reset_seed_dialog(msg)
+                            if event3== 'Cancel':
+                                msg= ("Seed reset cancelled!")
+                                self.show_message(msg)
+                                continue
+                            pin= values3['pin']
+                            pin= list(pin.encode('utf8'))
+                            # challenge
+                            authentikeyx= bytearray(self.client.cc.parser.authentikey_coordx).hex()
+                            challenge= authentikeyx + 32*'FF'
+                            mac = hmac.new(secret_2FA_bytes, bytes.fromhex(challenge), sha1)
+                            chalresponse_hex= mac.hexdigest()
+                            chalresponse_list= list(bytes.fromhex(chalresponse_hex))
+                            # send request 
+                            (response, sw1, sw2) = self.client.cc.card_reset_seed(pin, chalresponse_list)
+                            if (sw1==0x90 and sw2==0x00):
+                                msg= ("Seed reset successfully!")
+                                self.show_success(msg)
+                            else:
+                                msg= (f"Failed to reset seed with error code: {hex(sw1)}{hex(sw2)}")
+                                self.show_error(msg)
+                                continue
+                            
+                        # reset 2FA
+                        #compute id_2FA_20b
+                        mac = hmac.new(secret_2FA_bytes, "id_2FA".encode('utf-8'), sha1)
+                        id_2FA_20b= mac.hexdigest()
+                        #compute challenge & response
+                        challenge= id_2FA_20b + 44*'AA'
+                        mac = hmac.new(secret_2FA_bytes, bytes.fromhex(challenge), sha1)
+                        chalresponse_hex= mac.hexdigest()
+                        chalresponse_list= list(bytes.fromhex(chalresponse_hex))
+                        # send request 
+                        (response, sw1, sw2) = self.client.cc.card_reset_2FA_key(chalresponse_list)
+                        if (sw1==0x90 and sw2==0x00):
+                            self.client.cc.needs_2FA= False
+                            msg= ("2FA reset successfully!")
+                            self.show_success(msg)
+                        else:
+                            msg= (f"Failed to reset 2FA with error code: {hex(sw1)}{hex(sw2)}")
+                            self.show_error(msg)    
+                    else:
+                        self.show_error(f"Aborted: 2FA is not enabled on this device!")    
+                    continue
+                    
+                else:   
+                    continue
              
             ## About ##
             elif menu_item== 'About':
