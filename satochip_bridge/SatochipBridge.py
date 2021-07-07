@@ -73,7 +73,23 @@ class SatochipBridge(WebSocket):
             action= msg["action"]
         except Exception as e:
             logger.warning("exception: "+repr(e))
+            cc.client.request('show_error', "Exception while parsing request: \n"+repr(e) )
             
+        # check that card is present or wait
+        while (cc.card_present is not True) or (cc.card_type != "Satochip"):
+            (event, values)= cc.client.request('ok_or_cancel_msg','No card found! Please insert a Satochip to proceed...')
+            if event== 'Ok' :
+                continue
+            else: 
+                # return failure code
+                logger.debug("Cancel the request...")  
+                msg['exitstatus']=EXIT_FAILURE
+                msg['reason']='No card found'
+                reply= json.dumps(msg)
+                self.sendMessage(reply)
+                logger.debug("Reply (failure): "+reply)    
+                return
+        
         try:
             if (action=="get_status"):
                 response, sw1, sw2, status = cc.card_get_status()
@@ -116,17 +132,22 @@ class SatochipBridge(WebSocket):
                     logger.debug("encrypted message: "+msg_2FA)
                     logger.debug("id_2FA: "+ id_2FA)
                     
-                    #do challenge-response with 2FA device...
-                    notif= '2FA request sent! Approve or reject request on your second device.'
-                    cc.client.request('show_notification', notif)
-                    #cc.client.request('show_message', notif)
-                    Satochip2FA.do_challenge_response(d)
-                    # decrypt and parse reply to extract challenge response
                     try: 
+                        #do challenge-response with 2FA device...
+                        notif= '2FA request sent! Approve or reject request on your second device.'
+                        cc.client.request('show_notification', notif)
+                        #cc.client.request('show_message', notif)
+                        Satochip2FA.do_challenge_response(d)
+                        # decrypt and parse reply to extract challenge response
                         reply_encrypt= d['reply_encrypt']
+                        reply_decrypt= cc.card_crypt_transaction_2FA(reply_encrypt, False)
                     except Exception as e:
                         cc.client.request('show_error', "No response received from 2FA...")
-                    reply_decrypt= cc.card_crypt_transaction_2FA(reply_encrypt, False)
+                        msg['exitstatus']=EXIT_FAILURE
+                        msg['reason']= "No response received from 2FA"
+                        reply= json.dumps(msg)
+                        self.sendMessage(reply)
+                        return
                     logger.debug("challenge:response= "+ reply_decrypt)
                     reply_decrypt= reply_decrypt.split(":")
                     chalresponse=reply_decrypt[1]   
@@ -153,6 +174,7 @@ class SatochipBridge(WebSocket):
                     reply= json.dumps(d)
                     self.sendMessage(reply)
                     logger.debug("Reply: "+reply)    
+                    return
                 else:
                     hash= list(bytes.fromhex(msg["hash"]))
                     (response, sw1, sw2)=cc.card_sign_transaction_hash(keynbr, hash, hmac)
@@ -171,14 +193,20 @@ class SatochipBridge(WebSocket):
                         logger.debug ("v= " + str(v))
                     except Exception as e:
                         logger.warning("Exception in parse_rsv_from_dersig: " + repr(e)) 
-                      
+                        cc.client.request('show_error', "Exception in parse_rsv_from_dersig: " + repr(e))
+                        msg['exitstatus']=EXIT_FAILURE
+                        msg['reason']= "Exception in parse_rsv_from_dersig"
+                        reply= json.dumps(msg)
+                        self.sendMessage(reply)
+                        return
                     d= {'requestID':msg["requestID"], 'action':msg["action"], "hash":msg["hash"], 
                                 "sig":sigstring.hex(), "r":r, "s":s, "v":v, "pubkey":pubkey.get_public_key_bytes().hex(),
                                 'exitstatus':EXIT_SUCCESS}
                     reply= json.dumps(d)
                     self.sendMessage(reply)
                     logger.debug("Reply: "+reply)    
-                
+                    return
+                    
             else:
                 d= {'requestID':msg['requestID'], 'action':msg['action'], 'exitstatus':EXIT_FAILURE, 'reason':'Action unknown'}
                 reply= json.dumps(d)
@@ -186,8 +214,14 @@ class SatochipBridge(WebSocket):
                 logger.warning("Unknown action: "+action)
                 
         except Exception as e:
+            # return failure code
             logger.warning('Exception: ' + repr(e))
+            msg['exitstatus']=EXIT_FAILURE
+            msg['reason']= repr(e)
+            reply= json.dumps(msg)
+            self.sendMessage(reply)
             cc.client.request('show_error','[handleMessage] Exception: '+repr(e))
+            return
             #traceback.print_exc()
     
     #TODO: Only one connection at a time?
@@ -229,34 +263,18 @@ class SatochipBridge(WebSocket):
             # self.close()
             # return
         
-        try:
-            cc.client.card_init_connect()
-        except Exception as e:
-            cc.client.request('show_error','[handleConnected] Exception:'+repr(e))
-            logger.warning('Exception:'+repr(e))
-            # try:
-                # cc.card_disconnect()
-                # cc = CardConnector(parser)
-            # except Exception as e:
-                # print("In handleConnected(): exception")
-                # print(repr(e))
-
+        # We do not touch the card until we receive an actual request (in handleMessage)
+        # try:
+            # cc.client.card_init_connect()
+        # except Exception as e:
+            # cc.client.request('show_error','[handleConnected] Exception:'+repr(e))
+            # logger.warning('Exception:'+repr(e))
+            
     def handleClose(self):
         global logger
         wallets.pop(self)
         logger.info(self.address + 'closed')
         
-        
-#debug
-#cc.client.card_init_connect()
-#cc.client.handler.seed_wizard()
-#cc.client.handler.QRDialog(20*"00", None, "Satochip-Bridge: QR Code", True, "2FA: ")
-#cc.client.handler.choose_seed_action()
-#cc.client.handler.create_seed("AA BB CC DD EE FF")
-#cc.client.handler.request_passphrase()
-#cc.client.handler.confirm_seed()
-#cc.client.handler.confirm_passphrase()
-#cc.client.handler.restore_from_seed()
 
 def my_threaded_func(server):
     server.serveforever()

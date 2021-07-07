@@ -120,11 +120,10 @@ class Client:
     ########################################
     
     def card_init_connect(self):
-        logger.info("ATR: "+str(self.cc.card_get_ATR()))
-        #response, sw1, sw2 = self.card_select() #TODO: remove?
         
         # check setup
-        while(self.cc.card_present):
+        if (self.cc.card_present) and (self.cc.card_type == "Satochip"):
+            #logger.info("ATR: "+str(self.cc.card_get_ATR()))
             (response, sw1, sw2, d)=self.cc.card_get_status()
             
             # check version
@@ -141,8 +140,6 @@ class Client:
                 
                 if (self.cc.needs_secure_channel):
                     self.cc.card_initiate_secure_channel()
-                
-                break 
                 
             # setup device (done only once)
             else:
@@ -184,35 +181,38 @@ class Client:
                     return
                     #raise RuntimeError('Unable to setup the device with error code:'+hex(sw1)+' '+hex(sw2))
             
-        # verify pin:
-        try: 
-            self.cc.card_verify_PIN()
-        except RuntimeError as ex:
-            logger.warning(repr(ex))
-            self.request('show_error', repr(ex))
-            return
-        
-        # get authentikey
-        try:
-            authentikey=self.cc.card_bip32_get_authentikey()
-        except UninitializedSeedError:
-            # Option: setup 2-Factor-Authentication (2FA)
-            self.init_2FA()
-                    
-            # seed dialog...
-            (mnemonic, passphrase, seed)= self.seed_wizard()                    
-            if seed:
-                seed= list(seed)
-                authentikey= self.cc.card_bip32_import_seed(seed)
-                if authentikey:
-                    self.request('show_success','Seed successfully imported to Satochip!')
-                    hex_authentikey= authentikey.get_public_key_hex(compressed=True)
-                    logger.info(f"Authentikey={hex_authentikey}")
-                else:
-                    self.request('show_error','Error when importing seed to Satochip!')
-            else: #if cancel
-                self.request('show_message','Seed import cancelled!')
-        
+            # verify pin:
+            try: 
+                self.cc.card_verify_PIN()
+            except RuntimeError as ex:
+                logger.warning(repr(ex))
+                self.request('show_error', repr(ex))
+                return
+            
+            # get authentikey
+            try:
+                authentikey=self.cc.card_bip32_get_authentikey()
+            except UninitializedSeedError:
+                # Option: setup 2-Factor-Authentication (2FA)
+                self.init_2FA()
+                        
+                # seed dialog...
+                (mnemonic, passphrase, seed)= self.seed_wizard()                    
+                if seed:
+                    seed= list(seed)
+                    authentikey= self.cc.card_bip32_import_seed(seed)
+                    if authentikey:
+                        self.request('show_success','Seed successfully imported to Satochip!')
+                        hex_authentikey= authentikey.get_public_key_hex(compressed=True)
+                        logger.info(f"Authentikey={hex_authentikey}")
+                    else:
+                        self.request('show_error','Error when importing seed to Satochip!')
+                else: #if cancel
+                    self.request('show_message','Seed import cancelled!')
+            
+        else: 
+            self.request('show_error','No card found! Please insert a Satochip and try again...')
+
         
     def init_2FA(self, from_backup=False):
         logger.debug("In init_2FA")

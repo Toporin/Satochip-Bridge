@@ -91,6 +91,16 @@ class HandlerSimpleGUI:
         self.tray.ShowMessage("Satochip-Bridge notification", msg, messageicon=sg.SYSTEM_TRAY_MESSAGE_ICON_INFORMATION, time=100000)
         #logger.debug("END show_notification")
     
+    def ok_or_cancel_msg(self, msg):
+        logger.debug('In ok_or_cancel_msg')
+        layout = [[sg.Text(msg)],    
+                        [sg.Button('Ok'), sg.Button('Cancel')]]   
+        window = sg.Window('Satochip-Bridge: Confirmation required', layout, icon=self.satochip_icon)  #ok
+        event, values = window.read()    
+        window.close()  
+        del window
+        return (event, values)
+    
     def approve_action(self, question):
         logger.debug('In approve_action')
         layout = [[sg.Text(question)],    
