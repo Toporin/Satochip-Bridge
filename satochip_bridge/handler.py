@@ -12,7 +12,13 @@ from queue import Queue
 
 from pysatochip.Satochip2FA import Satochip2FA
 from pysatochip.CardConnector import CardConnector, UninitializedSeedError
-from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
+from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION, PYSATOCHIP_VERSION
+
+try: 
+    from version import SATOCHIP_BRIDGE_VERSION
+except Exception as e:
+    print('ImportError: '+repr(e))
+    from satochip_bridge.version import SATOCHIP_BRIDGE_VERSION
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -712,10 +718,12 @@ class HandlerSimpleGUI:
                                             [sg.Text('Wallet is seeded: ', size=(20, 1)), sg.Text(is_seeded)],
                                             [sg.Text('Requires 2FA: ', size=(20, 1)), sg.Text(needs_2FA)],
                                             [sg.Text('Uses Secure Channel: ', size=(20, 1)), sg.Text(needs_SC)]]
-                frame_layout2= [[sg.Text(msg_status, justification='center', relief=sg.RELIEF_SUNKEN)]]
+                frame_layout2= [[sg.Text('Satochip-Bridge version: ', size=(20, 1)), sg.Text(SATOCHIP_BRIDGE_VERSION)],
+                                            [sg.Text('Pysatochip version: ', size=(20, 1)), sg.Text(PYSATOCHIP_VERSION)],
+                                            [sg.Text(msg_status, justification='center', relief=sg.RELIEF_SUNKEN)]]
                 frame_layout3= [[sg.Text(msg_copyright, justification='center', relief=sg.RELIEF_SUNKEN)]]
                 layout = [[sg.Frame('Satochip', frame_layout1, font='Any 12', title_color='blue')],
-                              [sg.Frame('Satochip status', frame_layout2, font='Any 12', title_color='blue')],
+                              [sg.Frame('Satochip-Bridge status', frame_layout2, font='Any 12', title_color='blue')],
                               [sg.Frame('About Satochip-Bridge', frame_layout3, font='Any 12', title_color='blue')],
                               [sg.Button('Ok')]]
                 

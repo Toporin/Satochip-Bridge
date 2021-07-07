@@ -9,10 +9,10 @@ from os import urandom
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 
 
-from pysatochip.CardConnector import CardConnector, UninitializedSeedError
-from pysatochip.JCconstants import JCconstants
+from pysatochip.CardConnector import CardConnector #, UninitializedSeedError
 from pysatochip.Satochip2FA import Satochip2FA
-from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
+#from pysatochip.JCconstants import JCconstants
+#from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
 
 # from Client import Client
 # from handler import HandlerTxt, HandlerSimpleGUI
