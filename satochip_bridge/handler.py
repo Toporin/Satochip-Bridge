@@ -340,6 +340,7 @@ class HandlerSimpleGUI:
                 [sg.Button('Reset 2FA')], 
                 [sg.Button('Enable 2FA from 2FA-secret backup')], 
                 [sg.Button('Reset 2FA from 2FA-secret backup')], 
+                [sg.Button('Generate QR code from 2FA-secret backup')], 
                 [sg.Button('Select 2FA server')], 
                 [sg.Button('Cancel')],
         ]
@@ -635,6 +636,13 @@ class HandlerSimpleGUI:
                             self.show_error(msg)    
                     else:
                         self.show_error(f"Aborted: 2FA is not enabled on this device!")    
+                    continue
+                 
+                elif event== 'Generate QR code from 2FA-secret backup':
+                    (events2, values2)= self.import_2FA_backup()
+                    secret_2FA_hex= values2['secret_2FA']
+                    msg= 'Scan this QR code on your second device \nand securely save a backup of this 2FA-secret: \n'+secret_2FA_hex
+                    (event3, values3)= self.QRDialog(secret_2FA_hex, None, "Satochip-Bridge: QR Code", True, msg)
                     continue
                     
                 elif event== 'Select 2FA server':
