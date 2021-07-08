@@ -5,7 +5,7 @@ pyperclip==1.7.0
 ecdsa==0.15
 SimpleWebSocketServer==0.1.1
 pyscard==1.9.9
-pysatochip==0.11.2
+pysatochip==0.12.2
 #eth-keys==0.3.1
 #eth-utils==1.8.4
 

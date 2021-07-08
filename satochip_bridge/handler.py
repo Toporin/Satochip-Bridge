@@ -10,7 +10,7 @@ import os
 import logging
 from queue import Queue 
 
-from pysatochip.Satochip2FA import Satochip2FA
+from pysatochip.Satochip2FA import Satochip2FA, SERVER_LIST
 from pysatochip.CardConnector import CardConnector, UninitializedSeedError
 from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION, PYSATOCHIP_VERSION
 
@@ -64,14 +64,19 @@ class HandlerSimpleGUI:
         logger.debug("In __init__")
         sg.theme('BluePurple')
         # absolute path to python package folder of satochip_bridge ("lib")
-        #self.pkg_dir = os.path.split(os.path.realpath(__file__))[0] # does not work with packaged .exe 
+        #self.pkg_dir: the path where the app folder is located, for executable, the folder is extracted to a temp folder 
+        # self.app_dir: the path where the executable is located  (and the config file)
         if getattr( sys, 'frozen', False ):
             # running in a bundle
             self.pkg_dir= sys._MEIPASS # for pyinstaller
+            self.app_dir= os.path.dirname(sys.executable) 
         else :
             # running live
             self.pkg_dir = os.path.split(os.path.realpath(__file__))[0]
+            self.app_dir= os.path.dirname(os.path.abspath(__file__))
         logger.debug("PKGDIR= " + str(self.pkg_dir))
+        logger.debug("APPDIR= " + str(self.app_dir))
+        self.config_path= os.path.join(self.app_dir, 'satochip_bridge.ini')
         self.satochip_icon= self.icon_path("satochip.png") #"satochip.png"
         self.satochip_unpaired_icon= self.icon_path("satochip_unpaired.png") #"satochip_unpaired.png"
          
@@ -335,6 +340,7 @@ class HandlerSimpleGUI:
                 [sg.Button('Reset 2FA')], 
                 [sg.Button('Enable 2FA from 2FA-secret backup')], 
                 [sg.Button('Reset 2FA from 2FA-secret backup')], 
+                [sg.Button('Select 2FA server')], 
                 [sg.Button('Cancel')],
         ]
         window = sg.Window("Satochip-Bridge: 2FA options", layout, icon=self.satochip_icon)        
@@ -471,14 +477,23 @@ class HandlerSimpleGUI:
                     
                     #do challenge-response with 2FA device...
                     self.show_message('2FA request sent! Approve or reject request on your second device.')
-                    Satochip2FA.do_challenge_response(d)
-                    # decrypt and parse reply to extract challenge response
-                    try: 
+                    try:
+                        # get current server from config
+                        if os.path.isfile(self.config_path):  
+                            from configparser import ConfigParser    
+                            config = ConfigParser()
+                            config.read(self.config_path)
+                            server_default= config.get('2FA', 'server_default')
+                        else:
+                            server_default= SERVER_LIST[0] # no config file => default server
+                        # send request to server
+                        Satochip2FA.do_challenge_response(d, server_default)
+                        # decrypt and parse reply to extract challenge response
                         reply_encrypt= d['reply_encrypt']
+                        reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
                     except Exception as e:
                         self.show_error("No response received from 2FA...")
                         continue
-                    reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
                     logger.debug("challenge:response= "+ reply_decrypt)
                     reply_decrypt= reply_decrypt.split(":")
                     chalresponse=reply_decrypt[1]
@@ -493,49 +508,6 @@ class HandlerSimpleGUI:
                     msg= (f"Failed to reset seed with error code: {hex(sw1)}{hex(sw2)}")
                     self.show_error(msg)
                 
-                # Removed: 2FA-reset has its own menu option
-                # # reset 2FA
-                # if reset_2FA and self.client.cc.needs_2FA:     
-                    # # challenge based on ID_2FA
-                    # # format & encrypt msg
-                    # import json
-                    # msg= {'action':"reset_2FA"}
-                    # msg=  json.dumps(msg)
-                    # (id_2FA, msg_out)= self.client.cc.card_crypt_transaction_2FA(msg, True)
-                    # d={}
-                    # d['msg_encrypt']= msg_out
-                    # d['id_2FA']= id_2FA
-                    # # _logger.info("encrypted message: "+msg_out)
-                    
-                    # #do challenge-response with 2FA device...
-                    # self.client.handler.show_message('2FA request sent! Approve or reject request on your second device.')
-                    # Satochip2FA.do_challenge_response(d)
-                    # # decrypt and parse reply to extract challenge response
-                    # try: 
-                        # reply_encrypt= d['reply_encrypt']
-                    # except Exception as e:
-                        # self.show_error("No response received from 2FA...")
-                    # reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    # logger.debug("challenge:response= "+ reply_decrypt)
-                    # reply_decrypt= reply_decrypt.split(":")
-                    # chalresponse=reply_decrypt[1]
-                    # hmac= list(bytes.fromhex(chalresponse))
-                    
-                    # # send request 
-                    # (response, sw1, sw2) = self.client.cc.card_reset_2FA_key(hmac)
-                    # if (sw1==0x90 and sw2==0x00):
-                        # self.client.cc.needs_2FA= False
-                        # msg= ("2FA reset successfully!")
-                        # self.show_success(msg)
-                    # else:
-                        # msg= (f"Failed to reset 2FA with error code: {hex(sw1)}{hex(sw2)} \nYou may have to reset the seed first.")
-                        # self.show_error(msg)    
-            
-            ## Enable 2FA ##
-            # elif menu_item== 'Enable 2FA':
-                # self.client.init_2FA()
-                # continue
-             
             ## 2FA options ##
             elif menu_item== '2FA options':
                 (event, values)= self.choose_2FA_action()
@@ -561,13 +533,23 @@ class HandlerSimpleGUI:
                         
                         #do challenge-response with 2FA device...
                         self.show_message('2FA request sent! Approve or reject request on your second device.')
-                        Satochip2FA.do_challenge_response(d)
                         # decrypt and parse reply to extract challenge response
                         try: 
+                            # get current server from config
+                            if os.path.isfile(self.config_path):  
+                                from configparser import ConfigParser    
+                                config = ConfigParser()
+                                config.read(self.config_path)
+                                server_default= config.get('2FA', 'server_default')
+                            else:
+                                server_default= SERVER_LIST[0] # no config file => default server
+                            # send challenge and decrypt response
+                            Satochip2FA.do_challenge_response(d, server_default)
                             reply_encrypt= d['reply_encrypt']
+                            reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
                         except Exception as e:
                             self.show_error("No response received from 2FA...")
-                        reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
+                            continue
                         logger.debug("challenge:response= "+ reply_decrypt)
                         reply_decrypt= reply_decrypt.split(":")
                         chalresponse=reply_decrypt[1]
@@ -654,6 +636,52 @@ class HandlerSimpleGUI:
                     else:
                         self.show_error(f"Aborted: 2FA is not enabled on this device!")    
                     continue
+                    
+                elif event== 'Select 2FA server':
+                    from configparser import ConfigParser                
+                    # get current server from config
+                    try:
+                        if os.path.isfile(self.config_path):  
+                            config = ConfigParser()
+                            config.read(self.config_path)
+                            server_default= config.get('2FA', 'server_default')
+                        else:
+                            # no config file => default server
+                            server_default= SERVER_LIST[0]
+                    except Exception as e:
+                        logger.warning("Exception while fetching 2FA server url: "+ str(e))
+                        server_default= SERVER_LIST[0]
+                    # get list of server
+                    layout = [
+                            [sg.Text("Select the 2FA server from the list below:")],
+                            [sg.InputCombo(SERVER_LIST, size=(40, 1), default_value = server_default, key='server_list' )],
+                            [sg.Text("Current server: " + server_default)],
+                            [sg.Submit(), sg.Cancel()], 
+                    ]
+                    window = sg.Window("Satochip-Bridge: select 2FA server", layout, icon=self.satochip_icon)        
+                    event, values = window.read()    
+                    window.close()
+                    del window
+                    
+                    # update config
+                    if (event=='Submit'):
+                        server_new = values['server_list']
+                        if server_new != server_default:
+                            try: 
+                                # update config
+                                config = ConfigParser()
+                                config.read(self.config_path)
+                                if config.has_section('2FA') is False:
+                                    config.add_section('2FA')
+                                config.set('2FA', 'server_default', server_new)
+                                with open(self.config_path, 'w') as f:
+                                    config.write(f)
+                            except Exception as e:
+                                logger.warning("Exception while saving 2FA server url to config file: "+ str(e))
+                                self.show_error("Exception while saving 2FA server url to config file: "+ str(e))
+                    else:
+                        continue
+                    
                     
                 else:   
                     continue

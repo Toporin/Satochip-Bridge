@@ -9,4 +9,5 @@
 # v0.2.6-0.11.2: change websocket port to 8397
 # v0.2.7-0.11.2: add support for offline 2FA reset
 # v0.3.0: SeedKeeper support & better error handling
-SATOCHIP_BRIDGE_VERSION = '0.3.0' # version of the client package
+# v0.3.1: Add menu to select 2FA server in 2FA options
+SATOCHIP_BRIDGE_VERSION = '0.3.1' # version of the client package

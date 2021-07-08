@@ -3,14 +3,13 @@ import threading
 import time
 import logging
 import sys
+import os.path
 #import traceback
-from os import urandom
 
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 
-
 from pysatochip.CardConnector import CardConnector #, UninitializedSeedError
-from pysatochip.Satochip2FA import Satochip2FA
+from pysatochip.Satochip2FA import Satochip2FA, SERVER_LIST
 #from pysatochip.JCconstants import JCconstants
 #from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
 
@@ -133,11 +132,19 @@ class SatochipBridge(WebSocket):
                     logger.debug("id_2FA: "+ id_2FA)
                     
                     try: 
+                        # get server from config file
+                        if os.path.isfile(cc.client.handler.config_path):  
+                            from configparser import ConfigParser
+                            config = ConfigParser()
+                            config.read(cc.client.handler.config_path)
+                            server_default= config.get('2FA', 'server_default')
+                        else:
+                            server_default= SERVER_LIST[0] # no config file => default server
                         #do challenge-response with 2FA device...
                         notif= '2FA request sent! Approve or reject request on your second device.'
                         cc.client.request('show_notification', notif)
                         #cc.client.request('show_message', notif)
-                        Satochip2FA.do_challenge_response(d)
+                        Satochip2FA.do_challenge_response(d, server_default)
                         # decrypt and parse reply to extract challenge response
                         reply_encrypt= d['reply_encrypt']
                         reply_decrypt= cc.card_crypt_transaction_2FA(reply_encrypt, False)
