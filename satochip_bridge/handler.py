@@ -4,7 +4,7 @@ import PySimpleGUIQt as sg
 import base64    
 import getpass
 import pyperclip
-from pyperclip import PyperclipException
+#from pyperclip import PyperclipException
 import sys
 import os
 import logging
@@ -164,7 +164,8 @@ class HandlerSimpleGUI:
         image_as_str= base64.b64decode(image_as_str) #bytes
         
         layout = [[sg.Image(data=image_as_str, tooltip=None, visible=True)],
-                        [sg.Text(msg)],
+                        #[sg.Text(msg)], # cannot select and copy
+                        [sg.Multiline(msg, size=(35,3))],
                         [sg.Button('Ok'), sg.Button('Cancel'), sg.Button('Copy 2FA-secret to clipboard')]]     
         window = sg.Window(title, layout, icon=self.satochip_icon)    
         while True:
@@ -172,11 +173,17 @@ class HandlerSimpleGUI:
             if event=='Ok' or event=='Cancel':
                 break
             elif event=='Copy 2FA-secret to clipboard':
-                pyperclip.copy(data) 
+                try:
+                    pyperclip.copy(data) 
+                except:
+                    self.client.request('show_error', 'Could not copy data to clipboard! \nPlease select data manually and right-click to copy')
                 
         window.close()
         del window
-        pyperclip.copy('') #purge 2FA from clipboard
+        try:
+            pyperclip.copy('') #purge 2FA from clipboard
+        except: 
+            pass
         # logger.debug("Event:"+str(type(event))+str(event))
         # logger.debug("Values:"+str(type(values))+str(values))
         return (event, values)
@@ -219,7 +226,8 @@ class HandlerSimpleGUI:
         warning3= ("*Never disclose your seed.\n*Never type it on a website.\n*Do not store it electronically.")
         
         layout = [[sg.Text("Your wallet generation seed is:")],
-                [sg.Text(seed)], 
+                #[sg.Text(seed)], 
+                [sg.Multiline(seed, size=(40,4) )], 
                 [sg.Checkbox('Extends this seed with custom words', key='use_passphrase')], 
                 [sg.Text(warning1)],
                 [sg.Text(warning2)],
@@ -233,12 +241,15 @@ class HandlerSimpleGUI:
             elif event=='Copy seed to clipboard':
                 try:
                     pyperclip.copy(seed)
-                except PyperclipException as e:
-                    logger.warning("PyperclipException: "+ str(e))
-                    self.client.request('show_error', "PyperclipException: "+ str(e))
+                except:
+                    self.client.request('show_error', 'Could not copy data to clipboard! \nPlease select data manually and right-click to copy')
         window.close()
         del window
         
+        try:
+            pyperclip.copy('') #purge seed from clipboard
+        except: 
+            pass
         logger.debug("Event:"+str(type(event))+str(event))
         logger.debug("Values:"+str(type(values))+str(values))
         #Event:<class 'str'>Next
@@ -268,7 +279,6 @@ class HandlerSimpleGUI:
         
     def confirm_seed(self):
         logger.debug('In confirm_seed')
-        pyperclip.copy('') #purge clipboard to ensure that seed is backuped
         info1= ("Your seed is important! If you lose your seed, your money will be \npermanently lost. To make sure that you have properly saved your \nseed, please retype it here:")
         layout = [[sg.Text("Confirm seed")],
                 [sg.Text(info1)], 
