@@ -1,6 +1,6 @@
 #!/bin/bash
 
-NAME_ROOT= SatochipBridge #electrum
+NAME_ROOT=SatochipBridge #electrum
 
 # These settings probably don't need any change
 export WINEPREFIX=/opt/wine64
@@ -32,6 +32,10 @@ popd
 #info "Pip installing dependencies"
 #$PYTHON -m pip install --no-warn-script-location -r "$CONTRIB"/deterministic-build/requirements.txt
 # $PYTHON -m pip install --no-warn-script-location -r "$CONTRIB"/deterministic-build/requirements-hw.txt
+
+#DEBUG
+$PYTHON -m pip install --upgrade pip
+#$PYTHON -m pip install cryptography==3.3.1
 
 pushd $WINEPREFIX/drive_c/electrum
 # see https://github.com/pypa/pip/issues/2195 -- pip makes a copy of the entire directory

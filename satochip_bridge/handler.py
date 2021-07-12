@@ -4,15 +4,21 @@ import PySimpleGUIQt as sg
 import base64    
 import getpass
 import pyperclip
-from pyperclip import PyperclipException
+#from pyperclip import PyperclipException
 import sys
 import os
 import logging
 from queue import Queue 
 
-from pysatochip.Satochip2FA import Satochip2FA
+from pysatochip.Satochip2FA import Satochip2FA, SERVER_LIST
 from pysatochip.CardConnector import CardConnector, UninitializedSeedError
-from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
+from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION, PYSATOCHIP_VERSION
+
+try: 
+    from version import SATOCHIP_BRIDGE_VERSION
+except Exception as e:
+    print('ImportError: '+repr(e))
+    from satochip_bridge.version import SATOCHIP_BRIDGE_VERSION
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -58,7 +64,7 @@ class HandlerSimpleGUI:
         logger.debug("In __init__")
         sg.theme('BluePurple')
         # absolute path to python package folder of satochip_bridge ("lib")
-        #self.pkg_dir = os.path.split(os.path.realpath(__file__))[0] # does not work with packaged .exe 
+        #self.pkg_dir: the path where the app folder is located, for executable, the folder is extracted to a temp folder 
         if getattr( sys, 'frozen', False ):
             # running in a bundle
             self.pkg_dir= sys._MEIPASS # for pyinstaller
@@ -90,6 +96,16 @@ class HandlerSimpleGUI:
         #self.tray.ShowMessage("Satochip-Bridge notification", msg, filename=self.satochip_icon, time=10000)
         self.tray.ShowMessage("Satochip-Bridge notification", msg, messageicon=sg.SYSTEM_TRAY_MESSAGE_ICON_INFORMATION, time=100000)
         #logger.debug("END show_notification")
+    
+    def ok_or_cancel_msg(self, msg):
+        logger.debug('In ok_or_cancel_msg')
+        layout = [[sg.Text(msg)],    
+                        [sg.Button('Ok'), sg.Button('Cancel')]]   
+        window = sg.Window('Satochip-Bridge: Confirmation required', layout, icon=self.satochip_icon)  #ok
+        event, values = window.read()    
+        window.close()  
+        del window
+        return (event, values)
     
     def approve_action(self, question):
         logger.debug('In approve_action')
@@ -143,7 +159,8 @@ class HandlerSimpleGUI:
         image_as_str= base64.b64decode(image_as_str) #bytes
         
         layout = [[sg.Image(data=image_as_str, tooltip=None, visible=True)],
-                        [sg.Text(msg)],
+                        #[sg.Text(msg)], # cannot select and copy
+                        [sg.Multiline(msg, size=(35,3))],
                         [sg.Button('Ok'), sg.Button('Cancel'), sg.Button('Copy 2FA-secret to clipboard')]]     
         window = sg.Window(title, layout, icon=self.satochip_icon)    
         while True:
@@ -151,11 +168,17 @@ class HandlerSimpleGUI:
             if event=='Ok' or event=='Cancel':
                 break
             elif event=='Copy 2FA-secret to clipboard':
-                pyperclip.copy(data) 
+                try:
+                    pyperclip.copy(data) 
+                except:
+                    self.client.request('show_error', 'Could not copy data to clipboard! \nPlease select data manually and right-click to copy')
                 
         window.close()
         del window
-        pyperclip.copy('') #purge 2FA from clipboard
+        try:
+            pyperclip.copy('') #purge 2FA from clipboard
+        except: 
+            pass
         # logger.debug("Event:"+str(type(event))+str(event))
         # logger.debug("Values:"+str(type(values))+str(values))
         return (event, values)
@@ -198,7 +221,8 @@ class HandlerSimpleGUI:
         warning3= ("*Never disclose your seed.\n*Never type it on a website.\n*Do not store it electronically.")
         
         layout = [[sg.Text("Your wallet generation seed is:")],
-                [sg.Text(seed)], 
+                #[sg.Text(seed)], 
+                [sg.Multiline(seed, size=(40,4) )], 
                 [sg.Checkbox('Extends this seed with custom words', key='use_passphrase')], 
                 [sg.Text(warning1)],
                 [sg.Text(warning2)],
@@ -212,12 +236,15 @@ class HandlerSimpleGUI:
             elif event=='Copy seed to clipboard':
                 try:
                     pyperclip.copy(seed)
-                except PyperclipException as e:
-                    logger.warning("PyperclipException: "+ str(e))
-                    self.client.request('show_error', "PyperclipException: "+ str(e))
+                except:
+                    self.client.request('show_error', 'Could not copy data to clipboard! \nPlease select data manually and right-click to copy')
         window.close()
         del window
         
+        try:
+            pyperclip.copy('') #purge seed from clipboard
+        except: 
+            pass
         logger.debug("Event:"+str(type(event))+str(event))
         logger.debug("Values:"+str(type(values))+str(values))
         #Event:<class 'str'>Next
@@ -247,7 +274,6 @@ class HandlerSimpleGUI:
         
     def confirm_seed(self):
         logger.debug('In confirm_seed')
-        pyperclip.copy('') #purge clipboard to ensure that seed is backuped
         info1= ("Your seed is important! If you lose your seed, your money will be \npermanently lost. To make sure that you have properly saved your \nseed, please retype it here:")
         layout = [[sg.Text("Confirm seed")],
                 [sg.Text(info1)], 
@@ -319,6 +345,8 @@ class HandlerSimpleGUI:
                 [sg.Button('Reset 2FA')], 
                 [sg.Button('Enable 2FA from 2FA-secret backup')], 
                 [sg.Button('Reset 2FA from 2FA-secret backup')], 
+                [sg.Button('Generate QR code from 2FA-secret backup')], 
+                [sg.Button('Select 2FA server')], 
                 [sg.Button('Cancel')],
         ]
         window = sg.Window("Satochip-Bridge: 2FA options", layout, icon=self.satochip_icon)        
@@ -455,14 +483,23 @@ class HandlerSimpleGUI:
                     
                     #do challenge-response with 2FA device...
                     self.show_message('2FA request sent! Approve or reject request on your second device.')
-                    Satochip2FA.do_challenge_response(d)
-                    # decrypt and parse reply to extract challenge response
-                    try: 
+                    try:
+                        # get current server from config
+                        if os.path.isfile('satochip_bridge.ini'):  
+                            from configparser import ConfigParser    
+                            config = ConfigParser()
+                            config.read('satochip_bridge.ini')
+                            server_default= config.get('2FA', 'server_default')
+                        else:
+                            server_default= SERVER_LIST[0] # no config file => default server
+                        # send request to server
+                        Satochip2FA.do_challenge_response(d, server_default)
+                        # decrypt and parse reply to extract challenge response
                         reply_encrypt= d['reply_encrypt']
+                        reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
                     except Exception as e:
                         self.show_error("No response received from 2FA...")
                         continue
-                    reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
                     logger.debug("challenge:response= "+ reply_decrypt)
                     reply_decrypt= reply_decrypt.split(":")
                     chalresponse=reply_decrypt[1]
@@ -477,49 +514,6 @@ class HandlerSimpleGUI:
                     msg= (f"Failed to reset seed with error code: {hex(sw1)}{hex(sw2)}")
                     self.show_error(msg)
                 
-                # Removed: 2FA-reset has its own menu option
-                # # reset 2FA
-                # if reset_2FA and self.client.cc.needs_2FA:     
-                    # # challenge based on ID_2FA
-                    # # format & encrypt msg
-                    # import json
-                    # msg= {'action':"reset_2FA"}
-                    # msg=  json.dumps(msg)
-                    # (id_2FA, msg_out)= self.client.cc.card_crypt_transaction_2FA(msg, True)
-                    # d={}
-                    # d['msg_encrypt']= msg_out
-                    # d['id_2FA']= id_2FA
-                    # # _logger.info("encrypted message: "+msg_out)
-                    
-                    # #do challenge-response with 2FA device...
-                    # self.client.handler.show_message('2FA request sent! Approve or reject request on your second device.')
-                    # Satochip2FA.do_challenge_response(d)
-                    # # decrypt and parse reply to extract challenge response
-                    # try: 
-                        # reply_encrypt= d['reply_encrypt']
-                    # except Exception as e:
-                        # self.show_error("No response received from 2FA...")
-                    # reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    # logger.debug("challenge:response= "+ reply_decrypt)
-                    # reply_decrypt= reply_decrypt.split(":")
-                    # chalresponse=reply_decrypt[1]
-                    # hmac= list(bytes.fromhex(chalresponse))
-                    
-                    # # send request 
-                    # (response, sw1, sw2) = self.client.cc.card_reset_2FA_key(hmac)
-                    # if (sw1==0x90 and sw2==0x00):
-                        # self.client.cc.needs_2FA= False
-                        # msg= ("2FA reset successfully!")
-                        # self.show_success(msg)
-                    # else:
-                        # msg= (f"Failed to reset 2FA with error code: {hex(sw1)}{hex(sw2)} \nYou may have to reset the seed first.")
-                        # self.show_error(msg)    
-            
-            ## Enable 2FA ##
-            # elif menu_item== 'Enable 2FA':
-                # self.client.init_2FA()
-                # continue
-             
             ## 2FA options ##
             elif menu_item== '2FA options':
                 (event, values)= self.choose_2FA_action()
@@ -545,13 +539,23 @@ class HandlerSimpleGUI:
                         
                         #do challenge-response with 2FA device...
                         self.show_message('2FA request sent! Approve or reject request on your second device.')
-                        Satochip2FA.do_challenge_response(d)
                         # decrypt and parse reply to extract challenge response
                         try: 
+                            # get current server from config
+                            if os.path.isfile('satochip_bridge.ini'):  
+                                from configparser import ConfigParser    
+                                config = ConfigParser()
+                                config.read('satochip_bridge.ini')
+                                server_default= config.get('2FA', 'server_default')
+                            else:
+                                server_default= SERVER_LIST[0] # no config file => default server
+                            # send challenge and decrypt response
+                            Satochip2FA.do_challenge_response(d, server_default)
                             reply_encrypt= d['reply_encrypt']
+                            reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
                         except Exception as e:
                             self.show_error("No response received from 2FA...")
-                        reply_decrypt= self.client.cc.card_crypt_transaction_2FA(reply_encrypt, False)
+                            continue
                         logger.debug("challenge:response= "+ reply_decrypt)
                         reply_decrypt= reply_decrypt.split(":")
                         chalresponse=reply_decrypt[1]
@@ -638,6 +642,59 @@ class HandlerSimpleGUI:
                     else:
                         self.show_error(f"Aborted: 2FA is not enabled on this device!")    
                     continue
+                 
+                elif event== 'Generate QR code from 2FA-secret backup':
+                    (events2, values2)= self.import_2FA_backup()
+                    secret_2FA_hex= values2['secret_2FA']
+                    msg= 'Scan this QR code on your second device \nand securely save a backup of this 2FA-secret: \n'+secret_2FA_hex
+                    (event3, values3)= self.QRDialog(secret_2FA_hex, None, "Satochip-Bridge: QR Code", True, msg)
+                    continue
+                    
+                elif event== 'Select 2FA server':
+                    from configparser import ConfigParser                
+                    # get current server from config
+                    try:
+                        if os.path.isfile('satochip_bridge.ini'):  
+                            config = ConfigParser()
+                            config.read('satochip_bridge.ini')
+                            server_default= config.get('2FA', 'server_default')
+                        else:
+                            # no config file => default server
+                            server_default= SERVER_LIST[0]
+                    except Exception as e:
+                        logger.warning("Exception while fetching 2FA server url: "+ str(e))
+                        server_default= SERVER_LIST[0]
+                    # get list of server
+                    layout = [
+                            [sg.Text("Select the 2FA server from the list below:")],
+                            [sg.InputCombo(SERVER_LIST, size=(40, 1), default_value = server_default, key='server_list' )],
+                            [sg.Text("Current server: " + server_default)],
+                            [sg.Submit(), sg.Cancel()], 
+                    ]
+                    window = sg.Window("Satochip-Bridge: select 2FA server", layout, icon=self.satochip_icon)        
+                    event, values = window.read()    
+                    window.close()
+                    del window
+                    
+                    # update config
+                    if (event=='Submit'):
+                        server_new = values['server_list']
+                        if server_new != server_default:
+                            try: 
+                                # update config
+                                config = ConfigParser()
+                                config.read('satochip_bridge.ini')
+                                if config.has_section('2FA') is False:
+                                    config.add_section('2FA')
+                                config.set('2FA', 'server_default', server_new)
+                                with open('satochip_bridge.ini', 'w') as f:
+                                    config.write(f)
+                            except Exception as e:
+                                logger.warning("Exception while saving 2FA server url to config file: "+ str(e))
+                                self.show_error("Exception while saving 2FA server url to config file: "+ str(e))
+                    else:
+                        continue
+                    
                     
                 else:   
                     continue
@@ -702,10 +759,12 @@ class HandlerSimpleGUI:
                                             [sg.Text('Wallet is seeded: ', size=(20, 1)), sg.Text(is_seeded)],
                                             [sg.Text('Requires 2FA: ', size=(20, 1)), sg.Text(needs_2FA)],
                                             [sg.Text('Uses Secure Channel: ', size=(20, 1)), sg.Text(needs_SC)]]
-                frame_layout2= [[sg.Text(msg_status, justification='center', relief=sg.RELIEF_SUNKEN)]]
+                frame_layout2= [[sg.Text('Satochip-Bridge version: ', size=(20, 1)), sg.Text(SATOCHIP_BRIDGE_VERSION)],
+                                            [sg.Text('Pysatochip version: ', size=(20, 1)), sg.Text(PYSATOCHIP_VERSION)],
+                                            [sg.Text(msg_status, justification='center', relief=sg.RELIEF_SUNKEN)]]
                 frame_layout3= [[sg.Text(msg_copyright, justification='center', relief=sg.RELIEF_SUNKEN)]]
                 layout = [[sg.Frame('Satochip', frame_layout1, font='Any 12', title_color='blue')],
-                              [sg.Frame('Satochip status', frame_layout2, font='Any 12', title_color='blue')],
+                              [sg.Frame('Satochip-Bridge status', frame_layout2, font='Any 12', title_color='blue')],
                               [sg.Frame('About Satochip-Bridge', frame_layout3, font='Any 12', title_color='blue')],
                               [sg.Button('Ok')]]
                 
