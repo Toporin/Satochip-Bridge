@@ -65,18 +65,13 @@ class HandlerSimpleGUI:
         sg.theme('BluePurple')
         # absolute path to python package folder of satochip_bridge ("lib")
         #self.pkg_dir: the path where the app folder is located, for executable, the folder is extracted to a temp folder 
-        # self.app_dir: the path where the executable is located  (and the config file)
         if getattr( sys, 'frozen', False ):
             # running in a bundle
             self.pkg_dir= sys._MEIPASS # for pyinstaller
-            self.app_dir= os.path.dirname(sys.executable) 
         else :
             # running live
             self.pkg_dir = os.path.split(os.path.realpath(__file__))[0]
-            self.app_dir= os.path.dirname(os.path.abspath(__file__))
         logger.debug("PKGDIR= " + str(self.pkg_dir))
-        logger.debug("APPDIR= " + str(self.app_dir))
-        self.config_path= os.path.join(self.app_dir, 'satochip_bridge.ini')
         self.satochip_icon= self.icon_path("satochip.png") #"satochip.png"
         self.satochip_unpaired_icon= self.icon_path("satochip_unpaired.png") #"satochip_unpaired.png"
          
@@ -490,10 +485,10 @@ class HandlerSimpleGUI:
                     self.show_message('2FA request sent! Approve or reject request on your second device.')
                     try:
                         # get current server from config
-                        if os.path.isfile(self.config_path):  
+                        if os.path.isfile('satochip_bridge.ini'):  
                             from configparser import ConfigParser    
                             config = ConfigParser()
-                            config.read(self.config_path)
+                            config.read('satochip_bridge.ini')
                             server_default= config.get('2FA', 'server_default')
                         else:
                             server_default= SERVER_LIST[0] # no config file => default server
@@ -547,10 +542,10 @@ class HandlerSimpleGUI:
                         # decrypt and parse reply to extract challenge response
                         try: 
                             # get current server from config
-                            if os.path.isfile(self.config_path):  
+                            if os.path.isfile('satochip_bridge.ini'):  
                                 from configparser import ConfigParser    
                                 config = ConfigParser()
-                                config.read(self.config_path)
+                                config.read('satochip_bridge.ini')
                                 server_default= config.get('2FA', 'server_default')
                             else:
                                 server_default= SERVER_LIST[0] # no config file => default server
@@ -659,9 +654,9 @@ class HandlerSimpleGUI:
                     from configparser import ConfigParser                
                     # get current server from config
                     try:
-                        if os.path.isfile(self.config_path):  
+                        if os.path.isfile('satochip_bridge.ini'):  
                             config = ConfigParser()
-                            config.read(self.config_path)
+                            config.read('satochip_bridge.ini')
                             server_default= config.get('2FA', 'server_default')
                         else:
                             # no config file => default server
@@ -688,11 +683,11 @@ class HandlerSimpleGUI:
                             try: 
                                 # update config
                                 config = ConfigParser()
-                                config.read(self.config_path)
+                                config.read('satochip_bridge.ini')
                                 if config.has_section('2FA') is False:
                                     config.add_section('2FA')
                                 config.set('2FA', 'server_default', server_new)
-                                with open(self.config_path, 'w') as f:
+                                with open('satochip_bridge.ini', 'w') as f:
                                     config.write(f)
                             except Exception as e:
                                 logger.warning("Exception while saving 2FA server url to config file: "+ str(e))

@@ -133,10 +133,10 @@ class SatochipBridge(WebSocket):
                     
                     try: 
                         # get server from config file
-                        if os.path.isfile(cc.client.handler.config_path):  
+                        if os.path.isfile('satochip_bridge.ini'):  
                             from configparser import ConfigParser
                             config = ConfigParser()
-                            config.read(cc.client.handler.config_path)
+                            config.read('satochip_bridge.ini')
                             server_default= config.get('2FA', 'server_default')
                         else:
                             server_default= SERVER_LIST[0] # no config file => default server
@@ -159,6 +159,8 @@ class SatochipBridge(WebSocket):
                     reply_decrypt= reply_decrypt.split(":")
                     chalresponse=reply_decrypt[1]   
                     hmac= list(bytes.fromhex(chalresponse))
+                    notif= 'Received response from 2FA device!'
+                    cc.client.request('show_notification', notif)
                 else:
                     hmac=None
                     logger.debug("Skip confirmation for this action? "+ str(wallets[self]) )
