@@ -8,7 +8,15 @@ import pyperclip
 import sys
 import os
 import logging
+import re
 from queue import Queue 
+from configparser import ConfigParser    
+from pykson import Pykson
+
+# WalletConnect
+from pywalletconnectv1.wc_session_store_item import WCSessionStoreItem
+from pywalletconnectv1.models.wc_peer_meta import WCPeerMeta
+from pywalletconnectv1.models.session.wc_session import WCSession
 
 from pysatochip.Satochip2FA import Satochip2FA, SERVER_LIST
 from pysatochip.CardConnector import CardConnector, UninitializedSeedError
@@ -19,6 +27,13 @@ try:
 except Exception as e:
     print('ImportError: '+repr(e))
     from satochip_bridge.version import SATOCHIP_BRIDGE_VERSION
+
+# WalletConnect
+try: 
+    from wc_callback import WCCallback
+except Exception as e:
+    print('ImportError: '+repr(e))
+    from satochip_bridge.wc_callback import WCCallback
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -385,6 +400,75 @@ class HandlerSimpleGUI:
         del window
         return event, values
     
+    ### WalletConnect actions ###
+    def wallet_connect_create_new_session(self):
+        logger.debug('In wallet_connect_create_new_session')
+        layout = [
+            [sg.Text("Enter the WalletConnect URL below: ")],
+            [sg.InputText(key='wc_url', size=(80, 5))],
+            [sg.Text("Select the address: "), sg.InputText(default_text = "m/44'/60'/0'/0", key='bip32_path', size=(40, 1))], # TODO: pregenerate list of address instead of path
+            [sg.Text(size=(40,1), key='-OUTPUT-')],
+            [sg.Submit(), sg.Cancel()],
+        ] 
+        # TODO: get BIP32 path?
+        window = sg.Window('Create new WalletConnect session', layout, icon=self.satochip_icon)  #ok
+        
+        while True:                             
+            event, values = window.read() 
+            if event == None or event == 'Cancel':
+                break      
+            elif event == 'Submit':    
+                # check bip32 path
+                try:
+                    bip32_path= values['bip32_path']
+                    check= re.match("^(m/)?(\d+'?/)*\d+'?$", bip32_path); # https://stackoverflow.com/questions/61554569/bip32-derivepath-different-privatekey-in-nodejs-and-dartflutter-same-mnemonic
+                    if check is None:
+                        raise ValueError(f"Wrong bip32 path format!") 
+                except ValueError as ex: # wrong hex value
+                    window['-OUTPUT-'].update(str(ex))
+                    continue
+                # check url
+                try:
+                    wc_url= values['wc_url']
+                    wc_session= WCSession.from_uri(wc_url)
+                    values['wc_url']= wc_url
+                    values['wc_session']= wc_session
+                except ValueError as ex: # wrong hex value
+                    window['-OUTPUT-'].update(str(ex))
+                    continue
+                # if all goes well
+                break
+        window.close()
+        del window
+        return event, values
+    
+    def wallet_connect_manage_existing_session(self):
+        # TODO!
+        event= 'Cancel'
+        values= {}
+        return event, values    
+    
+    def wallet_connect_approve_new_session(self, wc_peer_meta: WCPeerMeta):
+        logger.debug('In wallet_connect_approve_new_session')
+        name = wc_peer_meta.name
+        url = wc_peer_meta.url
+        description = wc_peer_meta.description
+        icons = wc_peer_meta.icons
+        layout = [
+            [sg.Text("An app wants to connect to your your Satochip via WalletConnect!")],
+            [sg.Text("The app provided the following info:")],
+            [sg.Text(f" \t\t\tApp name: {name}")],
+            [sg.Text(f" \t\t\tWebsite: {url}")],
+            [sg.Text(f" \t\t\tDescription: {description}")],
+            [sg.Text(f" \t\t\tIcons: {icons}")], # todo: display icon!
+            [sg.Submit(), sg.Cancel()],
+        ] 
+        window = sg.Window('Approve new WalletConnect session', layout, icon=self.satochip_icon) 
+        event, values = window.read()    
+        window.close()
+        del window
+        return (event, values)
+    
     # communicate with other threads through queues
     def reply(self):    
         
@@ -405,7 +489,7 @@ class HandlerSimpleGUI:
     # system tray   
     def system_tray(self, card_present):
         logger.debug('In system_tray')
-        self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&2FA options', '&About', '&Quit']]
+        self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&2FA options', '&WalletConnect options', '&About', '&Quit']]
         
         if card_present:
             self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_icon) 
@@ -485,8 +569,7 @@ class HandlerSimpleGUI:
                     self.show_message('2FA request sent! Approve or reject request on your second device.')
                     try:
                         # get current server from config
-                        if os.path.isfile('satochip_bridge.ini'):  
-                            from configparser import ConfigParser    
+                        if os.path.isfile('satochip_bridge.ini'):      
                             config = ConfigParser()
                             config.read('satochip_bridge.ini')
                             server_default= config.get('2FA', 'server_default')
@@ -543,7 +626,6 @@ class HandlerSimpleGUI:
                         try: 
                             # get current server from config
                             if os.path.isfile('satochip_bridge.ini'):  
-                                from configparser import ConfigParser    
                                 config = ConfigParser()
                                 config.read('satochip_bridge.ini')
                                 server_default= config.get('2FA', 'server_default')
@@ -650,8 +732,7 @@ class HandlerSimpleGUI:
                     (event3, values3)= self.QRDialog(secret_2FA_hex, None, "Satochip-Bridge: QR Code", True, msg)
                     continue
                     
-                elif event== 'Select 2FA server':
-                    from configparser import ConfigParser                
+                elif event== 'Select 2FA server':            
                     # get current server from config
                     try:
                         if os.path.isfile('satochip_bridge.ini'):  
@@ -698,7 +779,62 @@ class HandlerSimpleGUI:
                     
                 else:   
                     continue
-             
+            
+            ## WalletConnect options ##
+            elif menu_item== 'WalletConnect options':
+                # get backup session from config:
+                wc_remote_peer_meta_txt=""
+                try:
+                    if os.path.isfile('satochip_bridge.ini'):  
+                        config = ConfigParser()
+                        config.read('satochip_bridge.ini')
+                        session_bckp= config.get('WalletConnect', 'session')
+                        bip32_path_bckp= config.get('WalletConnect', 'bip32_path')
+                        is_session_bckp= True
+                    else:
+                        # no config file => default server
+                        is_session_bckp= False
+                except Exception as e:
+                    logger.warning("Exception while fetching session bckp: "+ str(e))
+                    is_session_bckp= False
+                # parse session
+                if  is_session_bckp:
+                    try:
+                        wc_session_store_item= Pykson().from_json(session_bckp, WCSessionStoreItem)
+                        wc_remote_peer_meta= wc_session_store_item.remotePeerMeta # name url description icons
+                        wc_remote_peer_meta_txt= f"\n\tPeer name: {wc_remote_peer_meta.name} \n\tUrl: {wc_remote_peer_meta.url} \n\tDescription: {wc_remote_peer_meta.description}"
+                    except Exception as e:
+                        logger.warning("Exception while deserializing session bckp: "+ str(e))
+                        is_session_bckp= False
+                # show menu
+                layout = [
+                           [sg.Radio('Create new WalletConnect session', "WC_RADIO", key="wc_create", default=True), ],
+                           [sg.Radio('Load WalletConnect sessions from config' + wc_remote_peer_meta_txt , "WC_RADIO", key="wc_manage", disabled= not is_session_bckp), ],    
+                           [sg.Submit(), sg.Cancel()], 
+                    ]
+                window = sg.Window("Satochip-Bridge: WalletConnect options", layout, icon=self.satochip_icon)        
+                event, values = window.read()    
+                window.close()
+                del window
+                print(f"WalletConnect options: event={event} - values={values}")
+                if (event=='Submit'):
+                    if values['wc_create']== True:
+                        event_create, values_create = self.wallet_connect_create_new_session()
+                        if (event_create=='Submit'):
+                            wc_session= values_create['wc_session']
+                            bip32_path= values_create['bip32_path']
+                            self.client.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path) # todo: create callaback in satochipBridge and add ref in handler directly?
+                        else:
+                            continue
+                    elif values['wc_manage']== True:
+                        wc_session= wc_session_store_item.session
+                        bip32_path= bip32_path_bckp
+                        self.client.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path)
+                    continue
+                else:
+                    continue
+            
+            
             ## About ##
             elif menu_item== 'About':
                 #copyright
