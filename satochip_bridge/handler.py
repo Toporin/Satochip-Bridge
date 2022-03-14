@@ -943,6 +943,10 @@ class HandlerSimpleGUI:
              
             ## Quit ##
             elif menu_item in (None, 'Quit'):
+                # close any existing WalletConnect session
+                if self.client.wc_callback.wc_client is not None:
+                    self.client.wc_callback.killSession()
+                # exit infinite loop
                 break
                             
             # check for handle requests from client through the queue

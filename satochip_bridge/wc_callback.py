@@ -96,6 +96,7 @@ class WCCallback:
         logger.info("CALLBACK: killSession")
         if self.wc_session is not None:
             self.wc_client.killSession()
+            self.wc_client= None
         else:
             self.wc_client.disconnect()
         # TODO!
