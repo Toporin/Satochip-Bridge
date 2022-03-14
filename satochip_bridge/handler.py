@@ -407,7 +407,7 @@ class HandlerSimpleGUI:
         logger.debug('In wallet_connect_create_new_session')
         layout = [
             [sg.Text("Enter the WalletConnect URL below: ")],
-            [sg.InputText(key='wc_url', size=(80, 5))],
+            [sg.Multiline(key='wc_url', size=(60, 5))],
             [sg.Text("Select the address: "), sg.InputText(default_text = "m/44'/60'/0'/0", key='bip32_path', size=(40, 1))], # TODO: pregenerate list of address instead of path
             [sg.Text(size=(40,1), key='-OUTPUT-')],
             [sg.Submit(), sg.Cancel()],
