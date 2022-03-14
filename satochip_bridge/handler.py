@@ -108,11 +108,9 @@ class HandlerSimpleGUI:
         sg.popup('Satochip-Bridge Success!', msg, icon=self.satochip_icon)
     def show_message(self, msg):
         sg.popup('Satochip-Bridge Notification', msg, icon=self.satochip_icon)
-    def show_notification(self,msg):
+    def show_notification(self, title, msg):
         #logger.debug("START show_notification")
-        #self.tray.ShowMessage("Satochip-Bridge notification", msg, filename=self.satochip_icon, time=10000)
-        self.tray.ShowMessage("Satochip-Bridge notification", msg, messageicon=sg.SYSTEM_TRAY_MESSAGE_ICON_INFORMATION, time=100000)
-        #logger.debug("END show_notification")
+        self.tray.ShowMessage(title, msg, time=100000)
     
     def ok_or_cancel_msg(self, msg):
         logger.debug('In ok_or_cancel_msg')
@@ -444,46 +442,159 @@ class HandlerSimpleGUI:
         del window
         return event, values
     
-    def wallet_connect_close_session(self, remote_peer_meta_txt):
+    # def wallet_connect_close_session(self, remote_peer_meta_txt):
+        # layout = [
+            # [sg.Text("A WalletConnect session is already active:")],
+            # [sg.Text(remote_peer_meta_txt)],
+            # [sg.Text("Do you want to end this session and start a new one?:")],
+            # [sg.Submit(), sg.Cancel()],
+        # ]
+        # window = sg.Window('Close existing WalletConnect session?', layout, icon=self.satochip_icon) 
+        # event, values = window.read()    
+        # window.close()
+        # del window
+        # return (event, values)
+    
+    def wallet_connect_close_session(self):
+        if self.wc_callback.wc_client is not None:
+            try:
+                wc_remote_peer_meta= self.wc_callback.wc_remote_peer_meta
+                event_close, values_close= self.wallet_connect_close_session_dialog(wc_remote_peer_meta)
+                if event_close== "Submit":
+                    self.wc_callback.killSession()
+                    self.show_notification("Notification", "WalletConnect session closed successfully!")
+                else:
+                    self.show_notification("Notification", "Action cancelled by user!")
+            except Exception as ex:
+                logger.warning("Exception while closing existing session: "+ str(ex))
+                self.show_notification("Notification", f"Exception while closing existing session: {ex}")
+                self.wc_callback.wc_client= None # force closing
+    
+    def wallet_connect_close_session_dialog(self, wc_peer_meta: WCPeerMeta):
+        logger.debug('In wallet_connect_close_session_dialog')
+        layout_meta= self.wallet_connect_generate_layout_from_meta(wc_peer_meta)
         layout = [
-            [sg.Text("A WalletConnect session is already active:")],
-            [sg.Text(remote_peer_meta_txt)],
-            [sg.Text("Do you want to end this session and start a new one?:")],
-            [sg.Submit(), sg.Cancel()],
-        ]
-        window = sg.Window('Close existing WalletConnect session?', layout, icon=self.satochip_icon) 
+            [sg.Text("A WalletConnect session is already active")],
+            layout_meta,
+            [sg.Button('Close this session', key="Submit"), sg.Cancel()],
+        ] 
+        window = sg.Window('Close WalletConnect session?', layout, icon=self.satochip_icon) 
+        event, values = window.read()    
+        window.close()
+        del window
+        return (event, values)
+    
+    def wallet_connect_approve_new_session(self, wc_peer_meta: WCPeerMeta):
+        logger.debug('In wallet_connect_approve_new_session')
+        
+        layout_meta= self.wallet_connect_generate_layout_from_meta(wc_peer_meta)
+        layout = [
+            [sg.Text("An app wants to connect to your your Satochip via WalletConnect!")],
+            [sg.Text("The app provided the following info:")],
+            layout_meta,
+            [sg.Button('Approve connection', key="Submit"), sg.Cancel()],
+        ] 
+        window = sg.Window('Approve new WalletConnect session?', layout, icon=self.satochip_icon) 
         event, values = window.read()    
         window.close()
         del window
         return (event, values)
         
-    def wallet_connect_manage_existing_session(self):
-        # TODO!
-        event= 'Cancel'
-        values= {}
-        return event, values    
+    # def wallet_connect_approve_new_session(self, wc_peer_meta: WCPeerMeta):
+        # logger.debug('In wallet_connect_approve_new_session')
+        # name = wc_peer_meta.name
+        # url = wc_peer_meta.url
+        # description = wc_peer_meta.description
+        # icons = wc_peer_meta.icons
+        # # get icon image
+        # icon_available= False
+        # try:
+            # icon_url= icons[0]
+            # import requests
+            # from PIL import Image
+            # from io import BytesIO
+            # size = (128, 128)
+            # response = requests.get(icon_url)
+            # if response.status_code == 200:
+                # img = Image.open(BytesIO(response.content))
+                # img.thumbnail(size)
+                # #img.show() #debug open external viewer
+                # bio = BytesIO()
+                # img.save(bio, format="PNG")
+                # icon_raw= bio.getvalue()
+                # icon_available= True
+        # except Exception as ex:
+            # logger.debug(f'Exception while fetching image from url: {nft_image_url}  Exception: {ex}')
+        # # icon layout
+        # if icon_available:
+            # icon_layout = [
+                # [sg.Image(data=icon_raw, pad=(5,5))], 
+            # ] 
+        # else:
+            # icon_layout = [
+                # [sg.Text("(Unable to display icon!)")],
+            # ] 
+        # # layout
+        # info_layout = [
+            # [sg.Text(f"App name: {name}")],
+            # [sg.Text(f"Website: {url}")],
+            # [sg.Text(f"Description: {description}")],
+        # ] 
+        # layout = [
+            # [sg.Text("An app wants to connect to your your Satochip via WalletConnect!")],
+            # [sg.Text("The app provided the following info:")],
+            # [sg.Column(info_layout), sg.Column(icon_layout)],
+            # [sg.Button('Approve connection', key="Submit"), sg.Cancel()],
+        # ] 
+        # window = sg.Window('Approve new WalletConnect session?', layout, icon=self.satochip_icon) 
+        # event, values = window.read()    
+        # window.close()
+        # del window
+        # return (event, values)
     
-    def wallet_connect_approve_new_session(self, wc_peer_meta: WCPeerMeta):
-        logger.debug('In wallet_connect_approve_new_session')
+    def wallet_connect_generate_layout_from_meta(self, wc_peer_meta: WCPeerMeta):
+        logger.debug('In wallet_connect_generate_layout_from_meta')
         name = wc_peer_meta.name
         url = wc_peer_meta.url
         description = wc_peer_meta.description
         icons = wc_peer_meta.icons
-        layout = [
-            [sg.Text("An app wants to connect to your your Satochip via WalletConnect!")],
-            [sg.Text("The app provided the following info:")],
-            [sg.Text(f" \t\t\tApp name: {name}")],
-            [sg.Text(f" \t\t\tWebsite: {url}")],
-            [sg.Text(f" \t\t\tDescription: {description}")],
-            [sg.Text(f" \t\t\tIcons: {icons}")], # todo: display icon!
-            [sg.Submit(), sg.Cancel()],
+        # get icon image
+        icon_available= False
+        try:
+            icon_url= icons[0]
+            import requests
+            from PIL import Image
+            from io import BytesIO
+            size = (128, 128)
+            response = requests.get(icon_url)
+            if response.status_code == 200:
+                img = Image.open(BytesIO(response.content))
+                img.thumbnail(size)
+                #img.show() #debug open external viewer
+                bio = BytesIO()
+                img.save(bio, format="PNG")
+                icon_raw= bio.getvalue()
+                icon_available= True
+        except Exception as ex:
+            logger.debug(f'Exception while fetching image from url: {nft_image_url}  Exception: {ex}')
+        # icon layout
+        if icon_available:
+            icon_layout = [
+                [sg.Image(data=icon_raw, pad=(5,5))], 
+            ] 
+        else:
+            icon_layout = [
+                [sg.Text("(Unable to display icon!)")],
+            ] 
+        # layout
+        info_layout = [
+            [sg.Text(f"App name: {name}")],
+            [sg.Text(f"Website: {url}")],
+            [sg.Text(f"Description: {description}")],
         ] 
-        window = sg.Window('Approve new WalletConnect session', layout, icon=self.satochip_icon) 
-        event, values = window.read()    
-        window.close()
-        del window
-        return (event, values)
-    
+        layout = [sg.Column(info_layout), sg.Column(icon_layout)]
+        return layout
+        
     # communicate with other threads through queues
     def reply(self):    
         
@@ -500,12 +611,11 @@ class HandlerSimpleGUI:
             
             reply = method_to_call(*args)
             self.client.queue_reply.put((request_type, reply))
-                
+                    
     # system tray   
     def system_tray(self, card_present):
         logger.debug('In system_tray')
-        self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&2FA options', '&WalletConnect options', '&About', '&Quit']]
-        
+        self.menu_def = ['BLANK', ['&Setup new Satochip', '&Change PIN', '&Reset seed', '&2FA options', '&Start WalletConnect', '&Stop WalletConnect', '&About', '&Quit']]
         if card_present:
             self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_icon) 
         else:
@@ -849,18 +959,24 @@ class HandlerSimpleGUI:
                 # else:
                     # continue
             
-            elif menu_item== 'WalletConnect options':
-                if self.wc_callback.sato_client is None:
+            elif menu_item== 'Start WalletConnect':
+                if self.wc_callback.sato_client is None: # on the first use, sato_client may not be initialized
                     self.wc_callback.sato_client= self.client
                 # if there is an existing session
-                if self.wc_callback.wc_client is not None:
-                    wc_remote_peer_meta= self.wc_callback.wc_remote_peer_meta
-                    wc_remote_peer_meta_txt= f"\n\tPeer name: {wc_remote_peer_meta.name} \n\tUrl: {wc_remote_peer_meta.url} \n\tDescription: {wc_remote_peer_meta.description}"
-                    event_close, values_close= self.wallet_connect_close_session(wc_remote_peer_meta_txt)
-                    if event_close== "Submit":
-                        self.wc_callback.killSession()
-                    else:
-                        continue
+                self.wallet_connect_close_session()
+                # if self.wc_callback.wc_client is not None:
+                    # try:
+                        # wc_remote_peer_meta= self.wc_callback.wc_remote_peer_meta
+                        # #wc_remote_peer_meta_txt= f"\n\tPeer name: {wc_remote_peer_meta.name} \n\tUrl: {wc_remote_peer_meta.url} \n\tDescription: {wc_remote_peer_meta.description}"
+                        # event_close, values_close= self.wallet_connect_close_session(wc_remote_peer_meta)
+                        # if event_close== "Submit":
+                            # self.wc_callback.killSession()
+                            # self.show_notification("Notification", "WalletConnect session closed successfully!")
+                        # else:
+                            # continue
+                    # except Exception as ex:
+                        # logger.warning("Exception while closing existing session: "+ str(ex))
+                        # self.wc_callback.wc_client= None # force closing
                 # create new session   
                 event_create, values_create = self.wallet_connect_create_new_session()
                 if (event_create=='Submit'):
@@ -869,6 +985,10 @@ class HandlerSimpleGUI:
                     self.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path) # todo: create callaback in satochipBridge and add ref in handler directly?
                 else:
                     continue
+            
+            elif menu_item== 'Stop WalletConnect':
+                self.wallet_connect_close_session()
+                continue
             
             ## About ##
             elif menu_item== 'About':
@@ -949,7 +1069,10 @@ class HandlerSimpleGUI:
             elif menu_item in (None, 'Quit'):
                 # close any existing WalletConnect session
                 if self.wc_callback.wc_client is not None:
-                    self.wc_callback.killSession()
+                    try:
+                        self.wc_callback.killSession()
+                    except Exception as ex:
+                        logger.warning("Exception while closing existing session: "+ str(ex))
                 # exit infinite loop
                 break
                             

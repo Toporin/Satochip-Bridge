@@ -55,6 +55,7 @@ class WCCallback:
             logger.info("WalletConnection to Satochip approved!")
             self.wc_client.approveSession([self.wc_address], self.wc_chain_id)
             self.wc_remote_peer_meta= remote_peer_meta
+            self.sato_handler.show_notification("Notification","WalletConnection to Satochip approved by user!")
             # try: 
                 # # todo: save session
                 # wc_session_bckp= WCSessionStoreItem(
@@ -84,6 +85,7 @@ class WCCallback:
             
         else:
             logger.info("WalletConnection to Satochip rejected!")
+            self.sato_handler.show_notification("Notification","WalletConnection to Satochip rejected by user!")
             self.wc_client.rejectSession()
             self.wc_client.disconnect()
         

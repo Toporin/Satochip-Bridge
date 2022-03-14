@@ -142,7 +142,7 @@ class SatochipBridge(WebSocket):
                             server_default= SERVER_LIST[0] # no config file => default server
                         #do challenge-response with 2FA device...
                         notif= '2FA request sent! Approve or reject request on your second device.'
-                        cc.client.request('show_notification', notif)
+                        cc.client.request('show_notification', 'Notification', notif)
                         #cc.client.request('show_message', notif)
                         Satochip2FA.do_challenge_response(d, server_default)
                         # decrypt and parse reply to extract challenge response
@@ -160,7 +160,7 @@ class SatochipBridge(WebSocket):
                     chalresponse=reply_decrypt[1]   
                     hmac= list(bytes.fromhex(chalresponse))
                     notif= 'Received response from 2FA device!'
-                    cc.client.request('show_notification', notif)
+                    cc.client.request('show_notification', 'Notification', notif)
                 else:
                     hmac=None
                     logger.debug("Skip confirmation for this action? "+ str(wallets[self]) )
