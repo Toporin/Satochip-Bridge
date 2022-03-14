@@ -84,7 +84,6 @@ class WCCallback:
             address= raw[0]
             msg_raw= raw[1]
             msg_bytes= bytes.fromhex(msg_raw.strip("0x").strip("0X"))
-            logger.info(f"CALLBACK: onEthSign - MESSAGE= {msg_bytes.decode('utf-8')}")
         elif  wc_sign_type=="PERSONAL_MESSAGE":
             address= raw[1]
             msg_raw= raw[0] # yes, it's in the other order...
@@ -96,15 +95,23 @@ class WCCallback:
             address= raw[0]
             msg_raw= raw[1]
             msg_bytes= msg_raw.encode("utf-8") # not the correct specification!!
+        # text decoding
+        try:
+            msg_txt= msg_bytes.decode('utf-8')
+        except Exception as ex:
+            msg_txt= str(msg_bytes)
+        logger.info(f"CALLBACK: onEthSign - MESSAGE= {msg_txt}")
         logger.info(f"CALLBACK: onEthSign - msg_raw= {msg_raw}")
         msg_hash= self.msgtohash(msg_bytes)
         logger.info(f"CALLBACK: onEthSign - msg_hash= {msg_hash.hex()}")
         # request user approval
-        request_msg= ("An app wants to perform the following on your Satochip via WalletConnect:"+
-                                            "\n\tAction: sign message" +
-                                            "\n\tAddress:"+ str(self.wc_address)+
-                                            "\n\nApprove action?")
-        (event, values)= self.sato_client.request('approve_action', request_msg)
+        # request_msg= ("An app wants to perform the following on your Satochip via WalletConnect:"+
+                                            # "\n\tAction: sign message" +
+                                            # "\n\tAddress: "+ str(self.wc_address)+
+                                            # "\n\tMessage: "+ msg_txt+
+                                            # "\n\nApprove action?")
+        # (event, values)= self.sato_client.request('approve_action', request_msg)
+        (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, msg_txt)
         if event== 'Yes':
             logger.info(f"CALLBACK Approve signature? YES!")
             # derive key
@@ -143,14 +150,15 @@ class WCCallback:
         gasPrice= param.gasPrice
         value= param.value
         nonce= param.nonce
-        tx_txt= f"\n\tFrom: {from_} \n\tTo: 0x{to} \n\tValue: {value} \n\tGas: {gas} \n\tGas price: {gasPrice} \n\t Data: 0x{data} \n\tNonce: {nonce}"
+        tx_txt= f"To: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce}"
         #todo: check that from equals self.wc_address
         # request user approval
-        request_msg= ("An app wants to perform the following on your Satochip via WalletConnect:"+
-                                            "\n\tAction: sign transaction" +
-                                            tx_txt +
-                                            "\n\nApprove action?")
-        (event, values)= self.sato_client.request('approve_action', request_msg)
+        # request_msg= ("An app wants to perform the following on your Satochip via WalletConnect:"+
+                                            # "\n\tAction: sign transaction" +
+                                            # tx_txt +
+                                            # "\n\nApprove action?")
+        # (event, values)= self.sato_client.request('approve_action', request_msg)
+        (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", self.wc_address, tx_txt)
         if event== 'Yes':
             tx_obj= Transaction( # EIP155
                                 nonce= int(nonce, 16),

@@ -487,6 +487,23 @@ class HandlerSimpleGUI:
         del window
         return (event, values)
     
+    def wallet_connect_approve_action(self, action, address, data):
+        logger.debug('In wallet_connect_approve_action')
+        layout = [
+            [sg.Text("An app wants to perform the following on your Satochip via WalletConnect:")],    
+            [sg.Text(f"Action: {action}")],    
+            [sg.Text(f"Address: {address}")],    
+            [sg.Text(f"Details:")],    
+            [sg.Multiline(data, size=(60,6) )],
+            #[sg.Text(f"Approve this action?")],    
+            [sg.Button("Approve", key='Yes'), sg.Button("Reject", key='No')],
+        ]   
+        window = sg.Window('WalletConnect: confirmation required', layout, icon=self.satochip_icon)  #ok
+        event, values = window.read()    
+        window.close()  
+        del window
+        return (event, values)
+    
     def wallet_connect_generate_layout_from_meta(self, wc_peer_meta: WCPeerMeta):
         logger.debug('In wallet_connect_generate_layout_from_meta')
         name = wc_peer_meta.name
