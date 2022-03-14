@@ -853,7 +853,6 @@ class HandlerSimpleGUI:
                     else:
                         continue
                     
-                    
                 else:   
                     continue
             
@@ -861,7 +860,8 @@ class HandlerSimpleGUI:
                 if self.wc_callback.sato_client is None: # on the first use, sato_client may not be initialized
                     self.wc_callback.sato_client= self.client
                 # if there is an existing session
-                self.wallet_connect_close_session()
+                if self.wc_callback.wc_client is not None:
+                    self.wallet_connect_close_session()
                 # create new session   
                 event_create, values_create = self.wallet_connect_create_new_session()
                 if (event_create=='Submit'):
@@ -872,7 +872,10 @@ class HandlerSimpleGUI:
                     continue
             
             elif menu_item== 'Stop WalletConnect':
-                self.wallet_connect_close_session()
+                if self.wc_callback.wc_client is not None:
+                    self.wallet_connect_close_session()
+                else:
+                    self.show_notification("Notification", "No WalletConnect session open!")
                 continue
             
             ## About ##
