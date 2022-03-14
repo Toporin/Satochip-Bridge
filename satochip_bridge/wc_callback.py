@@ -26,17 +26,12 @@ CURVE_ORDER = SECP256k1.order
 
 class WCCallback:
     
-    def __init__(self, wc_client: WCClient= None, sato_client=None, sato_handler=None):
-        self.wc_client= wc_client
-        self.sato_client= sato_client # manage a pysatochip CardConnector object
+    def __init__(self, sato_client=None, sato_handler=None):
+        self.wc_client= None # set on wallet_connect_initiate_session()
+        self.sato_client= sato_client # manage a pysatochip CardConnector object, None by default as not  available during init, updated later
         self.sato_handler= sato_handler # manage UI
-        self.wc_chain_id= 1
-        #self.wc_chain_id=1
-        #self.privkey = SigningKey.generate(curve=SECP256k1, hashfunc=sha256)
-        #self.pubkey = self.privkey.get_verifying_key()
-        #self.wc_address= self.pubkey_to_ethereum_address(self.pubkey.to_string()) # to_string() actually returns bytes
-        #logger.info(f"CALLBACK pubkey={self.pubkey.to_string().hex()}")
-        #logger.info(f"CALLBACK address={self.wc_address}")
+        self.wc_chain_id= 1 # Ethereum by default # TOD: supports other chains?
+        self.wc_bip32_path="" # default, to be updated
     
     def wallet_connect_initiate_session(self, wc_session: WCSession, bip32_path: str):
         logger.info(f"CALLBACK: wallet_connect_initiate_session WCSession={WCSession} - bip32_path={bip32_path}")

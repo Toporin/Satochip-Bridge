@@ -89,6 +89,8 @@ class HandlerSimpleGUI:
         logger.debug("PKGDIR= " + str(self.pkg_dir))
         self.satochip_icon= self.icon_path("satochip.png") #"satochip.png"
         self.satochip_unpaired_icon= self.icon_path("satochip_unpaired.png") #"satochip_unpaired.png"
+         # WalletConnect
+        self.wc_callback= WCCallback(sato_client=None, sato_handler=self) # sato_client is not available during init
          
     def icon_path(self, icon_basename):
         #return resource_path(icon_basename)
@@ -836,25 +838,27 @@ class HandlerSimpleGUI:
                         # if (event_create=='Submit'):
                             # wc_session= values_create['wc_session']
                             # bip32_path= values_create['bip32_path']
-                            # self.client.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path) # todo: create callaback in satochipBridge and add ref in handler directly?
+                            # self.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path) # todo: create callaback in satochipBridge and add ref in handler directly?
                         # else:
                             # continue
                     # elif values['wc_manage']== True:
                         # wc_session= wc_session_store_item.session
                         # bip32_path= bip32_path_bckp
-                        # self.client.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path)
+                        # self.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path)
                     # continue
                 # else:
                     # continue
             
             elif menu_item== 'WalletConnect options':
+                if self.wc_callback.sato_client is None:
+                    self.wc_callback.sato_client= self.client
                 # if there is an existing session
-                if self.client.wc_callback.wc_client is not None:
-                    wc_remote_peer_meta= self.client.wc_callback.wc_remote_peer_meta
+                if self.wc_callback.wc_client is not None:
+                    wc_remote_peer_meta= self.wc_callback.wc_remote_peer_meta
                     wc_remote_peer_meta_txt= f"\n\tPeer name: {wc_remote_peer_meta.name} \n\tUrl: {wc_remote_peer_meta.url} \n\tDescription: {wc_remote_peer_meta.description}"
                     event_close, values_close= self.wallet_connect_close_session(wc_remote_peer_meta_txt)
                     if event_close== "Submit":
-                        self.client.wc_callback.killSession()
+                        self.wc_callback.killSession()
                     else:
                         continue
                 # create new session   
@@ -862,7 +866,7 @@ class HandlerSimpleGUI:
                 if (event_create=='Submit'):
                     wc_session= values_create['wc_session']
                     bip32_path= values_create['bip32_path']
-                    self.client.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path) # todo: create callaback in satochipBridge and add ref in handler directly?
+                    self.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path) # todo: create callaback in satochipBridge and add ref in handler directly?
                 else:
                     continue
             
@@ -944,8 +948,8 @@ class HandlerSimpleGUI:
             ## Quit ##
             elif menu_item in (None, 'Quit'):
                 # close any existing WalletConnect session
-                if self.client.wc_callback.wc_client is not None:
-                    self.client.wc_callback.killSession()
+                if self.wc_callback.wc_client is not None:
+                    self.wc_callback.killSession()
                 # exit infinite loop
                 break
                             

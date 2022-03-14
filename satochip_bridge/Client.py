@@ -8,17 +8,6 @@ from pysatochip.JCconstants import JCconstants
 from pysatochip.Satochip2FA import Satochip2FA
 from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
 
-# WalletConnect
-from pywalletconnectv1.wc_client import WCClient
-from pywalletconnectv1.models.wc_peer_meta import WCPeerMeta
-from pywalletconnectv1.models.session.wc_session import WCSession
-
-try: 
-    from wc_callback import WCCallback
-except Exception as e:
-    print('ImportError: '+repr(e))
-    from satochip_bridge.wc_callback import WCCallback
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -40,8 +29,6 @@ class Client:
         self.queue_request= Queue()
         self.queue_reply= Queue()
         self.cc= cc
-        # WalletConnect
-        self.wc_callback= WCCallback(None, self, self.handler) # todo: put in handler?
        
     def create_system_tray(self, card_present):
         self.handler.system_tray(card_present)
