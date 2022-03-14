@@ -38,7 +38,11 @@ class WCCallback:
         self.wc_session= wc_session
         # get address corresponding to bip32_path 
         self.wc_bip32_path= bip32_path
-        (self.wc_pubkey, self.wc_chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
+        try:
+            (self.wc_pubkey, self.wc_chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
+        except Exception as ex:
+            logger.warning(f"CALLBACK: exception in wallet_connect_initiate_session: {ex}")
+            return
         self.wc_address= self.pubkey_to_ethereum_address(self.wc_pubkey.get_public_key_bytes(compressed=False))
         # set wc objects
         self.wc_client= WCClient()
@@ -114,28 +118,30 @@ class WCCallback:
         (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, msg_txt)
         if event== 'Yes':
             logger.info(f"CALLBACK Approve signature? YES!")
-            # derive key
-            (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
-            logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
-            #sign msg hash
-            msg_hash= self.msgtohash(msg_bytes)
-            logger.info(f"CALLBACK: onEthSign - msg_hash= {msg_hash.hex()}")
-            keynbr=0xFF
-            hmac= None
-            (response, sw1, sw2)=self.sato_client.cc.card_sign_transaction_hash(keynbr, list(msg_hash), hmac)
-            logger.info(f"CALLBACK: onEthSign - response= {response}")
-            (r,s,v, sigstring)= self.sato_client.cc.parser.parse_rsv_from_dersig(bytes(response), msg_hash, pubkey) 
-            logger.info(f"CALLBACK: onEthSign - r= {r}")
-            logger.info(f"CALLBACK: onEthSign - s= {s}")
-            logger.info(f"CALLBACK: onEthSign - v= {v}")
-            logger.info(f"CALLBACK: onEthSign - sigstring= {sigstring.hex()}")
-            #sigstring= sigencode_string_canonize(r,s, CURVE_ORDER)
-            #sigstring= sigstring[1:]+sigstring[0:1] # for walletconnect, the v byte is appended AFTER r,s...
-            sigstring= sigstring[1:]+ bytes([v+27])# for walletconnect, the v byte is appended AFTER r,s...
-            logger.info(f"CALLBACK: onEthSign - sigstring= {sigstring.hex()}")
-            #sign_bytes= self.privkey.sign_digest(msg_hash)
-            sign_hex= "0x"+sigstring.hex()
-            self.wc_client.approveRequest(id_, sign_hex)
+            try:
+                # derive key
+                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
+                logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
+                #sign msg hash
+                msg_hash= self.msgtohash(msg_bytes)
+                logger.info(f"CALLBACK: onEthSign - msg_hash= {msg_hash.hex()}")
+                keynbr=0xFF
+                hmac= None
+                (response, sw1, sw2)=self.sato_client.cc.card_sign_transaction_hash(keynbr, list(msg_hash), hmac)
+                logger.info(f"CALLBACK: onEthSign - response= {response}")
+                # parse sig
+                (r,s,v, sigstring)= self.sato_client.cc.parser.parse_rsv_from_dersig(bytes(response), msg_hash, pubkey) 
+                logger.info(f"CALLBACK: onEthSign - r= {r}")
+                logger.info(f"CALLBACK: onEthSign - s= {s}")
+                logger.info(f"CALLBACK: onEthSign - v= {v}")
+                logger.info(f"CALLBACK: onEthSign - sigstring= {sigstring.hex()}")
+                sigstring= sigstring[1:]+ bytes([v+27])# for walletconnect, the v byte is appended AFTER r,s...
+                logger.info(f"CALLBACK: onEthSign - sigstring= {sigstring.hex()}")
+                sign_hex= "0x"+sigstring.hex()
+                self.wc_client.approveRequest(id_, sign_hex)
+            except Exception as ex:
+                logger.warning(f"CALLBACK: exception in onEthSign: {ex}")
+                self.wc_client.rejectRequest(id_)
         else:
             logger.info(f"CALLBACK Approve signature? NO!")
             self.wc_client.rejectRequest(id_)
@@ -175,46 +181,45 @@ class WCCallback:
             logger.info(f"CALLBACK: onEthSignTransaction - tx_bytes= {tx_bytes.hex()}")
             tx_hash= keccak(tx_bytes)
             logger.info(f"CALLBACK: onEthSignTransaction - tx_hash= {tx_hash.hex()}")
-            # derive key
-            (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
-            logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
-            # sign hash
-            keynbr=0xFF
-            hmac= None
-            (response, sw1, sw2)= self.sato_client.cc.card_sign_transaction_hash(keynbr, list(tx_hash), hmac)
-            logger.info(f"CALLBACK: onEthSignTransaction - response= {response}")
-            (r,s,v, sigstring)= self.sato_client.cc.parser.parse_rsv_from_dersig(bytes(response), tx_hash, pubkey) 
-            logger.info(f"CALLBACK: onEthSignTransaction - r= {r}")
-            logger.info(f"CALLBACK: onEthSignTransaction - s= {s}")
-            logger.info(f"CALLBACK: onEthSignTransaction - v= {v}")
-            logger.info(f"CALLBACK: onEthSignTransaction - sigstring= {sigstring.hex()}")
-            sigstring= sigstring[1:]+sigstring[0:1] # for walletconnect, the v byte is appended AFTER r,s...
-            logger.info(f"CALLBACK: onEthSignTransaction - sigstring= {sigstring.hex()}")
-            sign_hex= "0x"+sigstring.hex()
-            #sign_hex= "0x"+65*"00" # debug! (approved)
-            
-            # DEBUG
-            # https://flightwallet.github.io/decode-eth-tx/
-            # https://www.ethereumdecoder.com/
-            # https://antoncoding.github.io/eth-tx-decoder/
-            tx_obj_signed= Transaction(
-                                nonce= int(nonce, 16),
-                                gas_price=int(gasPrice, 16), 
-                                gas= int(gas, 16), 
-                                to=bytes.fromhex(to),  
-                                value= int(value, 16), 
-                                data= bytes.fromhex(data),   
-                                v= v+35+2*self.wc_chain_id, #EIP155
-                                r= r,
-                                s= s,
-            )
-            tx_bytes_signed= rlp.encode(tx_obj_signed)
-            tx_raw_hex= "0x"+tx_bytes_signed.hex()
-            logger.info(f"CALLBACK: onEthSignTransaction - tx_raw_hex= {tx_raw_hex}")
-            # ENDBUG
-            
-            self.wc_client.approveRequest(id_, sign_hex)
-        
+            try:
+                # derive key
+                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
+                logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
+                # sign hash
+                keynbr=0xFF
+                hmac= None
+                (response, sw1, sw2)= self.sato_client.cc.card_sign_transaction_hash(keynbr, list(tx_hash), hmac)
+                logger.info(f"CALLBACK: onEthSignTransaction - response= {response}")
+                # parse sig
+                (r,s,v, sigstring)= self.sato_client.cc.parser.parse_rsv_from_dersig(bytes(response), tx_hash, pubkey) 
+                logger.info(f"CALLBACK: onEthSignTransaction - r= {r}")
+                logger.info(f"CALLBACK: onEthSignTransaction - s= {s}")
+                logger.info(f"CALLBACK: onEthSignTransaction - v= {v}")
+                logger.info(f"CALLBACK: onEthSignTransaction - sigstring= {sigstring.hex()}")
+                sigstring= sigstring[1:]+sigstring[0:1] # for walletconnect, the v byte is appended AFTER r,s...
+                logger.info(f"CALLBACK: onEthSignTransaction - sigstring= {sigstring.hex()}")
+                sign_hex= "0x"+sigstring.hex()
+                # https://flightwallet.github.io/decode-eth-tx/
+                # https://www.ethereumdecoder.com/
+                # https://antoncoding.github.io/eth-tx-decoder/
+                tx_obj_signed= Transaction(
+                                    nonce= int(nonce, 16),
+                                    gas_price=int(gasPrice, 16), 
+                                    gas= int(gas, 16), 
+                                    to=bytes.fromhex(to),  
+                                    value= int(value, 16), 
+                                    data= bytes.fromhex(data),   
+                                    v= v+35+2*self.wc_chain_id, #EIP155
+                                    r= r,
+                                    s= s,
+                )
+                tx_bytes_signed= rlp.encode(tx_obj_signed)
+                tx_raw_hex= "0x"+tx_bytes_signed.hex()
+                logger.info(f"CALLBACK: onEthSignTransaction - tx_raw_hex= {tx_raw_hex}")
+                self.wc_client.approveRequest(id_, sign_hex)
+            except Exception as ex:
+                logger.warning(f"CALLBACK: exception in onEthSignTransaction: {ex}")
+                self.wc_client.rejectRequest(id_)
         else:
             logger.info(f"CALLBACK Approve signature? NO!")
             self.wc_client.rejectRequest(id_)
