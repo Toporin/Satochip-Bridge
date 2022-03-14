@@ -60,52 +60,57 @@ class WCCallback:
             logger.info("WalletConnection to Satochip approved!")
             self.wc_client.approveSession([self.wc_address], self.wc_chain_id)
             self.wc_remote_peer_meta= remote_peer_meta
-            try: 
-                # todo: save session
-                wc_session_bckp= WCSessionStoreItem(
-                                    session= self.wc_session,
-                                    chainId= self.wc_chain_id,
-                                    peerId= self.wc_client.peerId,
-                                    remotePeerId= self.wc_client.remotePeerId,
-                                    remotePeerMeta= self.wc_remote_peer_meta,
-                                    isAutoSign= False,
-                                    date= datetime.now(),
-                )
-                session_data= Pykson().to_json(wc_session_bckp)
-                logger.info(f"onSessionRequest: session_data= {session_data}")
-                # update config
-                if os.path.isfile('satochip_bridge.ini'):  
-                    config = ConfigParser()
-                    config.read('satochip_bridge.ini')
-                    if config.has_section('WalletConnect') is False:
-                        config.add_section('WalletConnect')
-                    config.set('WalletConnect', 'session', session_data)
-                    config.set('WalletConnect', 'bip32_path', self.wc_bip32_path)
-                    with open('satochip_bridge.ini', 'w') as f:
-                        config.write(f)
-                    logger.info(f"onSessionRequest: saved session in config: {session_data}")
-            except Exception as e:
-                logger.warning("Exception while saving WalletConnect session to config file: "+ str(e))
+            # try: 
+                # # todo: save session
+                # wc_session_bckp= WCSessionStoreItem(
+                                    # session= self.wc_session,
+                                    # chainId= self.wc_chain_id,
+                                    # peerId= self.wc_client.peerId,
+                                    # remotePeerId= self.wc_client.remotePeerId,
+                                    # remotePeerMeta= self.wc_remote_peer_meta,
+                                    # isAutoSign= False,
+                                    # date= datetime.now(),
+                # )
+                # session_data= Pykson().to_json(wc_session_bckp)
+                # logger.info(f"onSessionRequest: session_data= {session_data}")
+                # # update config
+                # if os.path.isfile('satochip_bridge.ini'):  
+                    # config = ConfigParser()
+                    # config.read('satochip_bridge.ini')
+                    # if config.has_section('WalletConnect') is False:
+                        # config.add_section('WalletConnect')
+                    # config.set('WalletConnect', 'session', session_data)
+                    # config.set('WalletConnect', 'bip32_path', self.wc_bip32_path)
+                    # with open('satochip_bridge.ini', 'w') as f:
+                        # config.write(f)
+                    # logger.info(f"onSessionRequest: saved session in config: {session_data}")
+            # except Exception as e:
+                # logger.warning("Exception while saving WalletConnect session to config file: "+ str(e))
             
         else:
             logger.info("WalletConnection to Satochip rejected!")
-            wc_client.rejectSession()
-            wc_client.disconnect()
+            self.wc_client.rejectSession()
+            self.wc_client.disconnect()
         
     def killSession(self):
         logger.info("CALLBACK: killSession")
+        if self.wc_session is not None:
+            self.wc_client.killSession()
+        else:
+            self.wc_client.disconnect()
+        # TODO!
         # remove session bckp from config
-        try:
-            if os.path.isfile('satochip_bridge.ini'):  
-                config = ConfigParser()
-                config.read('satochip_bridge.ini')
-                if config.has_section('WalletConnect') is True:
-                    config.remove_option('WalletConnect', 'session')
-                    config.remove_option('WalletConnect', 'bip32_path')
-                with open('satochip_bridge.ini', 'w') as f:
-                    config.write(f)
-        except Exception as e:
-            logger.warning("Exception while removing WalletConnect session from config file: "+ str(e))
+        # try:
+            # if os.path.isfile('satochip_bridge.ini'):  
+                # config = ConfigParser()
+                # config.read('satochip_bridge.ini')
+                # if config.has_section('WalletConnect') is True:
+                    # config.remove_option('WalletConnect', 'session')
+                    # config.remove_option('WalletConnect', 'bip32_path')
+                # with open('satochip_bridge.ini', 'w') as f:
+                    # config.write(f)
+        # except Exception as e:
+            # logger.warning("Exception while removing WalletConnect session from config file: "+ str(e))
             
     def onFailure(self, ex):
         logger.info(f"CALLBACK: onFailure ex= {ex}")
