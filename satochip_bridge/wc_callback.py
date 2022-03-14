@@ -56,33 +56,6 @@ class WCCallback:
             self.wc_client.approveSession([self.wc_address], self.wc_chain_id)
             self.wc_remote_peer_meta= remote_peer_meta
             self.sato_handler.show_notification("Notification","WalletConnection to Satochip approved by user!")
-            # try: 
-                # # todo: save session
-                # wc_session_bckp= WCSessionStoreItem(
-                                    # session= self.wc_session,
-                                    # chainId= self.wc_chain_id,
-                                    # peerId= self.wc_client.peerId,
-                                    # remotePeerId= self.wc_client.remotePeerId,
-                                    # remotePeerMeta= self.wc_remote_peer_meta,
-                                    # isAutoSign= False,
-                                    # date= datetime.now(),
-                # )
-                # session_data= Pykson().to_json(wc_session_bckp)
-                # logger.info(f"onSessionRequest: session_data= {session_data}")
-                # # update config
-                # if os.path.isfile('satochip_bridge.ini'):  
-                    # config = ConfigParser()
-                    # config.read('satochip_bridge.ini')
-                    # if config.has_section('WalletConnect') is False:
-                        # config.add_section('WalletConnect')
-                    # config.set('WalletConnect', 'session', session_data)
-                    # config.set('WalletConnect', 'bip32_path', self.wc_bip32_path)
-                    # with open('satochip_bridge.ini', 'w') as f:
-                        # config.write(f)
-                    # logger.info(f"onSessionRequest: saved session in config: {session_data}")
-            # except Exception as e:
-                # logger.warning("Exception while saving WalletConnect session to config file: "+ str(e))
-            
         else:
             logger.info("WalletConnection to Satochip rejected!")
             self.sato_handler.show_notification("Notification","WalletConnection to Satochip rejected by user!")
@@ -96,19 +69,6 @@ class WCCallback:
             self.wc_client= None
         else:
             self.wc_client.disconnect()
-        # TODO!
-        # remove session bckp from config
-        # try:
-            # if os.path.isfile('satochip_bridge.ini'):  
-                # config = ConfigParser()
-                # config.read('satochip_bridge.ini')
-                # if config.has_section('WalletConnect') is True:
-                    # config.remove_option('WalletConnect', 'session')
-                    # config.remove_option('WalletConnect', 'bip32_path')
-                # with open('satochip_bridge.ini', 'w') as f:
-                    # config.write(f)
-        # except Exception as e:
-            # logger.warning("Exception while removing WalletConnect session from config file: "+ str(e))
             
     def onFailure(self, ex):
         logger.info(f"CALLBACK: onFailure ex= {ex}")
@@ -185,8 +145,6 @@ class WCCallback:
         nonce= param.nonce
         tx_txt= f"\n\tFrom: {from_} \n\tTo: 0x{to} \n\tValue: {value} \n\tGas: {gas} \n\tGas price: {gasPrice} \n\t Data: 0x{data} \n\tNonce: {nonce}"
         #todo: check that from equals self.wc_address
-        # tx_json= Pykson().to_json
-        # tx_hash= self.txtohash(tx_json)
         # request user approval
         request_msg= ("An app wants to perform the following on your Satochip via WalletConnect:"+
                                             "\n\tAction: sign transaction" +
@@ -194,14 +152,6 @@ class WCCallback:
                                             "\n\nApprove action?")
         (event, values)= self.sato_client.request('approve_action', request_msg)
         if event== 'Yes':
-            # tx_obj= TransactionUnsigned(
-                                # nonce= int(nonce, 16),
-                                # gas_price=int(gasPrice, 16), 
-                                # gas= int(gas, 16), 
-                                # to=bytes.fromhex(to),  
-                                # value= int(value, 16), 
-                                # data= bytes.fromhex(data),          
-            # )
             tx_obj= Transaction( # EIP155
                                 nonce= int(nonce, 16),
                                 gas_price=int(gasPrice, 16), 
