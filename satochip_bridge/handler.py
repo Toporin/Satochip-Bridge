@@ -450,12 +450,15 @@ class HandlerSimpleGUI:
                 if event_close== "Submit":
                     self.wc_callback.killSession()
                     self.show_notification("Notification", "WalletConnect session closed successfully!")
+                    return True
                 else:
                     self.show_notification("Notification", "Action cancelled by user!")
+                    return False
             except Exception as ex:
                 logger.warning("Exception while closing existing session: "+ str(ex))
                 self.show_notification("Notification", f"Exception while closing existing session: {ex}")
                 self.wc_callback.wc_client= None # force closing
+                return True
     
     def wallet_connect_close_session_dialog(self, wc_peer_meta: WCPeerMeta):
         logger.debug('In wallet_connect_close_session_dialog')
@@ -861,7 +864,10 @@ class HandlerSimpleGUI:
                     self.wc_callback.sato_client= self.client
                 # if there is an existing session
                 if self.wc_callback.wc_client is not None:
-                    self.wallet_connect_close_session()
+                    is_closed= self.wallet_connect_close_session()
+                    if not is_closed:
+                        continue
+                        
                 # create new session   
                 event_create, values_create = self.wallet_connect_create_new_session()
                 if (event_create=='Submit'):
