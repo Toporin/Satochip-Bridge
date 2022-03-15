@@ -30,7 +30,7 @@ class WCCallback:
         self.wc_client= None # set on wallet_connect_initiate_session()
         self.sato_client= sato_client # manage a pysatochip CardConnector object, None by default as not  available during init, updated later
         self.sato_handler= sato_handler # manage UI
-        self.wc_chain_id= 1 # Ethereum by default # TOD: supports other chains?
+        self.wc_chain_id= 1 # Ethereum by default # TODO: supports other chains?
         self.wc_bip32_path="" # default, to be updated
     
     def wallet_connect_initiate_session(self, wc_session: WCSession, bip32_path: str):
@@ -76,6 +76,7 @@ class WCCallback:
             
     def onFailure(self, ex):
         logger.info(f"CALLBACK: onFailure ex= {ex}")
+        self.sato_client.request('show_error', f'Error while processing WalletConnect request: {ex}')
         
     def onEthSign(self, id_: int, wc_ethereum_sign_message: WCEthereumSignMessage):  
         logger.info("CALLBACK: onEthSign")
