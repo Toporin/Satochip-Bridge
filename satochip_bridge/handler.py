@@ -403,6 +403,87 @@ class HandlerSimpleGUI:
     ### WalletConnect actions ###
     def wallet_connect_create_new_session(self):
         logger.debug('In wallet_connect_create_new_session')
+        BIP32_PATH_LIST= ["m/44'/60'/0'/0/", "m/44'/1'/0'/0/", "m/"]
+        CHAINID_LIST= ["0x1 - Ethereum", "0x38 - Binance Smart Chain"]
+        # default address
+        try:
+            bip32_path= BIP32_PATH_LIST[0] + '0'
+            (pubkey, chaincode)= self.client.cc.card_bip32_get_extendedkey(bip32_path)
+            address= self.wc_callback.pubkey_to_ethereum_address(pubkey.get_public_key_bytes(compressed=False)) 
+        except Exception as ex:
+            logger.debug(f"Exception {ex}")
+            addres="(unknown)"
+        # layout
+        layout = [
+            [sg.Text("Enter the WalletConnect URL below: ")],
+            [sg.Multiline(key='wc_url', size=(60, 5))],
+            [sg.Text("Select the chainId: ", size=(20, 1)), 
+                sg.InputCombo(CHAINID_LIST, key='chain_id', size=(20, 1)),
+                sg.Text("",size=(5, 1))], 
+            [sg.Text("Select the bip32 path: ", size=(20, 1)), 
+                sg.InputCombo(BIP32_PATH_LIST, key='bip32_path', size=(20, 1), enable_events=True), 
+                sg.InputText(default_text = "0", key='bip32_index', size=(5, 1), enable_events=True) ], 
+            [sg.Text("Corresponding address: ", size=(20, 1)), sg.Text(address, key='bip32_address')],
+            [sg.Text(size=(40,1), key='-OUTPUT-')],
+            [sg.Submit(), sg.Cancel()],
+        ] 
+        # TODO: chainId?
+        window = sg.Window('Create new WalletConnect session', layout, icon=self.satochip_icon)  #ok
+        while True:                             
+            event, values = window.read() 
+            if event == None or event == 'Cancel':
+                break 
+            
+            elif event=="bip32_path" or event=="bip32_index":
+                try:
+                    # check bip32 path
+                    bip32_path= values["bip32_path"] + values["bip32_index"]
+                    check= re.match("^(m/)?(\d+'?/)*\d+'?$", bip32_path); # https://stackoverflow.com/questions/61554569/bip32-derivepath-different-privatekey-in-nodejs-and-dartflutter-same-mnemonic
+                    if check is None:
+                        raise ValueError(f"Wrong bip32 path format: {bip32_path}") 
+                    # check index
+                    index= int(bip32_index)
+                    if index<0 or index>=0x80000000:
+                        raise ValueError(f"Wrong index value: {bip32_index} (should be an integer 0<= index < 0x80000000)") 
+                    # compute address
+                    (pubkey, chaincode)= self.client.cc.card_bip32_get_extendedkey(bip32_path)
+                    address= self.wc_callback.pubkey_to_ethereum_address(pubkey.get_public_key_bytes(compressed=False))
+                    # show 
+                    window['bip32_address'].update(address)
+                except Exception as ex:
+                    window['-OUTPUT-'].update(str(ex))
+                    continue
+                    
+            elif event == 'Submit':    
+                # check bip32 path
+                try:
+                    bip32_path= values["bip32_path"] + values["bip32_index"]
+                    check= re.match("^(m/)?(\d+'?/)*\d+'?$", bip32_path); # https://stackoverflow.com/questions/61554569/bip32-derivepath-different-privatekey-in-nodejs-and-dartflutter-same-mnemonic
+                    if check is None:
+                        raise ValueError(f"Wrong bip32 path format!") 
+                except ValueError as ex: 
+                    window['-OUTPUT-'].update(str(ex))
+                    continue
+                # check url
+                try:
+                    wc_url= values['wc_url']
+                    wc_session= WCSession.from_uri(wc_url)
+                    values['wc_url']= wc_url
+                    values['wc_session']= wc_session
+                except ValueError as ex: 
+                    window['-OUTPUT-'].update(str(ex))
+                    continue
+                # if all goes well
+                break
+        # update bip32_path & chain_id
+        values["bip32_path"]= values["bip32_path"] + values["bip32_index"]
+        values["chain_id"]= int(values["chain_id"].split(" - ")[0], 16) # convert hex to int
+        window.close()
+        del window
+        return event, values
+    
+    def wallet_connect_create_new_session_old(self):
+        logger.debug('In wallet_connect_create_new_session')
         layout = [
             [sg.Text("Enter the WalletConnect URL below: ")],
             [sg.Multiline(key='wc_url', size=(60, 5))],
@@ -873,7 +954,8 @@ class HandlerSimpleGUI:
                 if (event_create=='Submit'):
                     wc_session= values_create['wc_session']
                     bip32_path= values_create['bip32_path']
-                    self.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path) # todo: create callaback in satochipBridge and add ref in handler directly?
+                    chain_id= values_create['chain_id']
+                    self.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path, chain_id) # todo: create callaback in satochipBridge and add ref in handler directly?
                 else:
                     continue
             

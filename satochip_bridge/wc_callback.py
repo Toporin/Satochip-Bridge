@@ -34,17 +34,18 @@ class WCCallback:
         self.wc_chain_id= 1 # Ethereum by default # TODO: supports other chains?
         self.wc_bip32_path="" # default, to be updated
     
-    def wallet_connect_initiate_session(self, wc_session: WCSession, bip32_path: str):
+    def wallet_connect_initiate_session(self, wc_session: WCSession, bip32_path: str, chain_id: int):
         logger.info(f"CALLBACK: wallet_connect_initiate_session WCSession={WCSession} - bip32_path={bip32_path}")
         self.wc_session= wc_session
-        # get address corresponding to bip32_path 
         self.wc_bip32_path= bip32_path
+        self.wc_chain_id= chain_id
+        # get address corresponding to bip32_path 
         try:
             (self.wc_pubkey, self.wc_chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
+            self.wc_address= self.pubkey_to_ethereum_address(self.wc_pubkey.get_public_key_bytes(compressed=False))
         except Exception as ex:
             logger.warning(f"CALLBACK: exception in wallet_connect_initiate_session: {ex}")
             return
-        self.wc_address= self.pubkey_to_ethereum_address(self.wc_pubkey.get_public_key_bytes(compressed=False))
         # set wc objects
         self.wc_client= WCClient()
         self.wc_client.set_callback(self)
@@ -158,7 +159,7 @@ class WCCallback:
         gasPrice= param.gasPrice
         value= param.value
         nonce= param.nonce
-        tx_txt= f"To: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce}"
+        tx_txt= f"To: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce} \nChainId: {self.wc_chain_id}"
         #todo: check that from equals self.wc_address
         # request user approval
         # request_msg= ("An app wants to perform the following on your Satochip via WalletConnect:"+
