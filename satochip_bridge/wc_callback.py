@@ -18,6 +18,7 @@ from pywalletconnectv1.models.wc_peer_meta import WCPeerMeta
 from pywalletconnectv1.models.session.wc_session import WCSession
 from pywalletconnectv1.models.ethereum.wc_ethereum_sign_message import WCEthereumSignMessage, WCSignType
 from pywalletconnectv1.models.ethereum.wc_ethereum_transaction import WCEthereumTransaction
+from pywalletconnectv1.models.ethereum.wc_ethereum_switch_chain import WCEthereumSwitchChain
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -228,7 +229,24 @@ class WCCallback:
     def onEthSendTransaction(self, id_, param: WCEthereumTransaction):
         logger.info(f"CALLBACK: onEthSendTransaction id={id_} - param={param}")
         self.wc_client.rejectRequest(id_) # currently unsupported
-        
+
+    def onEthSwitchChain(self, id_, param: WCEthereumSwitchChain):
+        logger.info("CALLBACK: onEthSwitchChain")
+        try:
+            new_chain_id= int(param.chainId, 16)
+            old_chain_id= self.wc_chain_id
+            msg= f"Dapp requests to switch from {hex(old_chain_id)} to {hex(new_chain_id)}" # todo: display readable name
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "switch chain", self.wc_address, msg)
+            if event== 'Yes':
+                self.wc_chain_id= new_chain_id
+                self.wc_client.chainId= new_chain_id
+                self.wc_client.approveRequest(id_, None) # https://docs.metamask.io/guide/rpc-api.html#wallet-switchethereumchain
+            else:
+                self.wc_client.rejectRequest(id_)
+        except Exception as ex:
+            logger.warning(f"CALLBACK: exception in onEthSwitchChain: {ex}")
+            self.wc_client.rejectRequest(id_)
+            
     def onCustomRequest(self, id_, param):
         logger.info(f"CALLBACK: onCustomRequest id={id_} - param={param}")
     
