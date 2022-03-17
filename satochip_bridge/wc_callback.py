@@ -20,6 +20,12 @@ from pywalletconnectv1.models.ethereum.wc_ethereum_sign_message import WCEthereu
 from pywalletconnectv1.models.ethereum.wc_ethereum_transaction import WCEthereumTransaction
 from pywalletconnectv1.models.ethereum.wc_ethereum_switch_chain import WCEthereumSwitchChain
 
+try: 
+    from sato2FA import Sato2FA
+except Exception as e:
+    print('ImportError: '+repr(e))
+    from satochip_bridge.sato2FA import Sato2FA
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -33,7 +39,7 @@ class WCCallback:
         self.sato_handler= sato_handler # manage UI
         self.wc_chain_id= 1 # Ethereum by default # TODO: supports other chains?
         self.wc_bip32_path="" # default, to be updated
-    
+        
     def wallet_connect_initiate_session(self, wc_session: WCSession, bip32_path: str, chain_id: int):
         logger.info(f"CALLBACK: wallet_connect_initiate_session WCSession={WCSession} - bip32_path={bip32_path}")
         self.wc_session= wc_session
@@ -111,25 +117,31 @@ class WCCallback:
         logger.info(f"CALLBACK: onEthSign - msg_raw= {msg_raw}")
         msg_hash= self.msgtohash(msg_bytes)
         logger.info(f"CALLBACK: onEthSign - msg_hash= {msg_hash.hex()}")
-        # request user approval
-        # request_msg= ("An app wants to perform the following on your Satochip via WalletConnect:"+
-                                            # "\n\tAction: sign message" +
-                                            # "\n\tAddress: "+ str(self.wc_address)+
-                                            # "\n\tMessage: "+ msg_txt+
-                                            # "\n\nApprove action?")
-        # (event, values)= self.sato_client.request('approve_action', request_msg)
-        (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, msg_txt)
-        if event== 'Yes':
+        
+        is_approved= False
+        hmac= None
+        if self.sato_client.cc.needs_2FA:
+            # construct request msg for 2FA
+            msg={}
+            msg['action']= "sign_msg_hash"
+            msg['alt']= "Ethereum"
+            msg['msg']= msg_txt # msg_raw # in hex format
+            msg['hash']= msg_hash.hex()
+            (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
+        else: 
+            # request user approval via GUI
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, msg_txt)
+            if event== 'Yes':
+                is_approved= True
+                
+        if is_approved:
             logger.info(f"CALLBACK Approve signature? YES!")
             try:
                 # derive key
                 (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
                 logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
                 #sign msg hash
-                msg_hash= self.msgtohash(msg_bytes)
-                logger.info(f"CALLBACK: onEthSign - msg_hash= {msg_hash.hex()}")
                 keynbr=0xFF
-                hmac= None
                 (response, sw1, sw2)=self.sato_client.cc.card_sign_transaction_hash(keynbr, list(msg_hash), hmac)
                 logger.info(f"CALLBACK: onEthSign - response= {response}")
                 # parse sig
@@ -161,36 +173,52 @@ class WCCallback:
         nonce= param.nonce
         tx_txt= f"To: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce} \nChainId: {self.wc_chain_id}"
         #todo: check that from equals self.wc_address
+        if from_ != self.wc_address:
+            tx_txt+=f"\nWARNING: transaction 'From' value ({from_}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this transaction!"
+        
+        # build tx
+        tx_obj= Transaction( # EIP155
+                            nonce= int(nonce, 16),
+                            gas_price=int(gasPrice, 16), 
+                            gas= int(gas, 16), 
+                            to=bytes.fromhex(to),  
+                            value= int(value, 16), 
+                            data= bytes.fromhex(data),      
+                            v= self.wc_chain_id,
+                            r=0,
+                            s=0,
+        )
+        tx_bytes= rlp.encode(tx_obj)
+        logger.info(f"CALLBACK: onEthSignTransaction - tx_bytes= {tx_bytes.hex()}")
+        tx_hash= keccak(tx_bytes)
+        logger.info(f"CALLBACK: onEthSignTransaction - tx_hash= {tx_hash.hex()}")
+        
         # request user approval
-        # request_msg= ("An app wants to perform the following on your Satochip via WalletConnect:"+
-                                            # "\n\tAction: sign transaction" +
-                                            # tx_txt +
-                                            # "\n\nApprove action?")
-        # (event, values)= self.sato_client.request('approve_action', request_msg)
-        (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", self.wc_address, tx_txt)
-        if event== 'Yes':
-            tx_obj= Transaction( # EIP155
-                                nonce= int(nonce, 16),
-                                gas_price=int(gasPrice, 16), 
-                                gas= int(gas, 16), 
-                                to=bytes.fromhex(to),  
-                                value= int(value, 16), 
-                                data= bytes.fromhex(data),      
-                                v= self.wc_chain_id,
-                                r=0,
-                                s=0,
-            )
-            tx_bytes= rlp.encode(tx_obj)
-            logger.info(f"CALLBACK: onEthSignTransaction - tx_bytes= {tx_bytes.hex()}")
-            tx_hash= keccak(tx_bytes)
-            logger.info(f"CALLBACK: onEthSignTransaction - tx_hash= {tx_hash.hex()}")
+        is_approved= False
+        hmac= None
+        if self.sato_client.cc.needs_2FA:
+            # construct request msg for 2FA
+            msg={}
+            msg['action']= "sign_tx_hash"
+            msg['tx']= tx_bytes.hex()
+            msg['hash']= tx_hash.hex()
+            msg['from']= self.wc_address 
+            msg['chainId']= self.wc_chain_id # optionnal, otherwise taken from tx deserialization...
+            (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
+        else: 
+            # request user approval via GUI
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", self.wc_address, tx_txt)
+            if event== 'Yes':
+                is_approved= True
+        
+        if is_approved:
+            logger.info(f"CALLBACK Approve tx signature? YES!")
             try:
                 # derive key
                 (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
                 logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
                 # sign hash
                 keynbr=0xFF
-                hmac= None
                 (response, sw1, sw2)= self.sato_client.cc.card_sign_transaction_hash(keynbr, list(tx_hash), hmac)
                 logger.info(f"CALLBACK: onEthSignTransaction - response= {response}")
                 # parse sig
@@ -230,7 +258,7 @@ class WCCallback:
     def onEthSendTransaction(self, id_, param: WCEthereumTransaction):
         logger.info(f"CALLBACK: onEthSendTransaction id={id_} - param={param}")
         self.wc_client.rejectRequest(id_) # currently unsupported
-
+        
     def onEthSwitchChain(self, id_, param: WCEthereumSwitchChain):
         logger.info("CALLBACK: onEthSwitchChain")
         try:
@@ -247,7 +275,7 @@ class WCCallback:
         except Exception as ex:
             logger.warning(f"CALLBACK: exception in onEthSwitchChain: {ex}")
             self.wc_client.rejectRequest(id_)
-            
+        
     def onCustomRequest(self, id_, param):
         logger.info(f"CALLBACK: onCustomRequest id={id_} - param={param}")
     

@@ -19,10 +19,12 @@ from pysatochip.Satochip2FA import Satochip2FA, SERVER_LIST
 try: 
     from Client import Client
     from handler import HandlerTxt, HandlerSimpleGUI
+    from sato2FA import Sato2FA
 except Exception as e:
     print('ImportError: '+repr(e))
     from satochip_bridge.Client import Client
     from satochip_bridge.handler import HandlerTxt, HandlerSimpleGUI
+    from satochip_bridge.sato2FA import Sato2FA
 
 # try:
     # from eth_keys import keys, KeyAPI
@@ -121,48 +123,51 @@ class SatochipBridge(WebSocket):
                 logger.debug("Sign hash: "+ msg["hash"])
                 keynbr=0xFF
                 
+                is_approved= False
+                hmac= None
                 if cc.needs_2FA:
                     #msg2FA= {'action':action, 'msg':message, 'alt':'etherlike'}
-                    msg_2FA=  json.dumps(msg)
-                    (id_2FA, msg_2FA)= cc.card_crypt_transaction_2FA(msg_2FA, True)
-                    d={}
-                    d['msg_encrypt']= msg_2FA
-                    d['id_2FA']= id_2FA
-                    logger.debug("encrypted message: "+msg_2FA)
-                    logger.debug("id_2FA: "+ id_2FA)
+                    (is_approved, hmac)= Sato2FA.do_challenge_response(client, msg)
                     
-                    try: 
-                        # get server from config file
-                        if os.path.isfile('satochip_bridge.ini'):  
-                            from configparser import ConfigParser
-                            config = ConfigParser()
-                            config.read('satochip_bridge.ini')
-                            server_default= config.get('2FA', 'server_default')
-                        else:
-                            server_default= SERVER_LIST[0] # no config file => default server
-                        #do challenge-response with 2FA device...
-                        notif= '2FA request sent! Approve or reject request on your second device.'
-                        cc.client.request('show_notification', 'Notification', notif)
-                        #cc.client.request('show_message', notif)
-                        Satochip2FA.do_challenge_response(d, server_default)
-                        # decrypt and parse reply to extract challenge response
-                        reply_encrypt= d['reply_encrypt']
-                        reply_decrypt= cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    except Exception as e:
-                        cc.client.request('show_error', "No response received from 2FA...")
-                        msg['exitstatus']=EXIT_FAILURE
-                        msg['reason']= "No response received from 2FA"
-                        reply= json.dumps(msg)
-                        self.sendMessage(reply)
-                        return
-                    logger.debug("challenge:response= "+ reply_decrypt)
-                    reply_decrypt= reply_decrypt.split(":")
-                    chalresponse=reply_decrypt[1]   
-                    hmac= list(bytes.fromhex(chalresponse))
-                    notif= 'Received response from 2FA device!'
-                    cc.client.request('show_notification', 'Notification', notif)
+                    # msg_2FA=  json.dumps(msg)
+                    # (id_2FA, msg_2FA)= cc.card_crypt_transaction_2FA(msg_2FA, True)
+                    # d={}
+                    # d['msg_encrypt']= msg_2FA
+                    # d['id_2FA']= id_2FA
+                    # logger.debug("encrypted message: "+msg_2FA)
+                    # logger.debug("id_2FA: "+ id_2FA)
+                    
+                    # try: 
+                        # # get server from config file
+                        # if os.path.isfile('satochip_bridge.ini'):  
+                            # from configparser import ConfigParser
+                            # config = ConfigParser()
+                            # config.read('satochip_bridge.ini')
+                            # server_default= config.get('2FA', 'server_default')
+                        # else:
+                            # server_default= SERVER_LIST[0] # no config file => default server
+                        # #do challenge-response with 2FA device...
+                        # notif= '2FA request sent! Approve or reject request on your second device.'
+                        # cc.client.request('show_notification', 'Notification', notif)
+                        # #cc.client.request('show_message', notif)
+                        # Satochip2FA.do_challenge_response(d, server_default)
+                        # # decrypt and parse reply to extract challenge response
+                        # reply_encrypt= d['reply_encrypt']
+                        # reply_decrypt= cc.card_crypt_transaction_2FA(reply_encrypt, False)
+                    # except Exception as e:
+                        # cc.client.request('show_error', "No response received from 2FA...")
+                        # msg['exitstatus']=EXIT_FAILURE
+                        # msg['reason']= "No response received from 2FA"
+                        # reply= json.dumps(msg)
+                        # self.sendMessage(reply)
+                        # return
+                    # logger.debug("challenge:response= "+ reply_decrypt)
+                    # reply_decrypt= reply_decrypt.split(":")
+                    # chalresponse=reply_decrypt[1]   
+                    # hmac= list(bytes.fromhex(chalresponse))
+                    # notif= 'Received response from 2FA device!'
+                    # cc.client.request('show_notification', 'Notification', notif)
                 else:
-                    hmac=None
                     logger.debug("Skip confirmation for this action? "+ str(wallets[self]) )
                     if not wallets[self]: #if confirm required
                         request_action= "sign a message" if action=="sign_msg_hash" else "sign a transaction"
@@ -172,11 +177,13 @@ class SatochipBridge(WebSocket):
                                                         "\n\nApprove action?")
                         (event, values)= cc.client.request('approve_action', request_msg)
                         if event== 'No' or event== 'None':
-                            hmac=20*[0] # will trigger reject   
+                            #hmac=20*[0] # will trigger reject   
+                            is_approved= False
                         else:
+                            is_approved= True
                             wallets[self]= values['skip_conf']
                 
-                if (hmac==20*[0]): # rejected by 2FA or user
+                if not is_approved:
                     d= {'requestID':msg["requestID"], 'action':msg["action"], "hash":msg["hash"], 
                         "sig":71*'00', "r":32*'00', "s":32*'00', "v":0 , "pubkey":pubkey.get_public_key_bytes().hex(),
                         'exitstatus':EXIT_FAILURE, 'reason':'Signing request rejected by user'}
