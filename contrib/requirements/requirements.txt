@@ -12,3 +12,4 @@ certifi
 # GUI
 PySimpleGUIQt==0.31.0
 PySide2==5.12.6 #5.14.2 # <= 5.15.0 
+pillow == 8.4.0
