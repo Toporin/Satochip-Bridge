@@ -415,8 +415,9 @@ class HandlerSimpleGUI:
             addres="(unknown)"
         # layout
         layout = [
-            [sg.Text("Enter the WalletConnect URL below: ")],
-            [sg.Multiline(key='wc_url', size=(60, 5))],
+            #[sg.Button("Get QR code from screenshot", key='take_screenshot')],
+            [sg.Text("Enter the WalletConnect URL below: "), sg.Button("Scan QR code", key='take_screenshot')],
+            [sg.Multiline(key='wc_url', size=(40, 5))],
             [sg.Text("Select the chainId: ", size=(20, 1)), 
                 sg.InputCombo(CHAINID_LIST, key='chain_id', size=(20, 1)),
                 sg.Text("",size=(5, 1))], 
@@ -434,6 +435,21 @@ class HandlerSimpleGUI:
             if event == None or event == 'Cancel':
                 break 
             
+            elif event== 'take_screenshot':
+                import PIL.ImageGrab
+                im = PIL.ImageGrab.grab()
+                #im.show()
+                # extract QR code (https://betterprogramming.pub/how-to-generate-and-decode-qr-codes-in-python-a933bce56fd0)
+                import cv2
+                import numpy
+                im2= cv2.cvtColor(numpy.array(im), cv2.COLOR_RGB2BGR)
+                det = cv2.QRCodeDetector()
+                output, points, straight_qrcode = det.detectAndDecode(im2)
+                if output=='':
+                    output= "unable to extract url from QR code"
+                logger.debug(f'Extracted QR-code: {output}')
+                window['wc_url'].update(output)
+                
             elif event=="bip32_path" or event=="bip32_index":
                 try:
                     # check bip32 path
@@ -612,7 +628,7 @@ class HandlerSimpleGUI:
                 icon_raw= bio.getvalue()
                 icon_available= True
         except Exception as ex:
-            logger.debug(f'Exception while fetching image from url: {nft_image_url}  Exception: {ex}')
+            logger.debug(f'Exception while fetching image from url: {icon_url}  Exception: {ex}')
         # icon layout
         if icon_available:
             icon_layout = [
