@@ -1,7 +1,7 @@
 import logging
 import os
 import rlp
-from rlp.sedes import big_endian_int, Binary, binary
+from rlp.sedes import BigEndianInt, big_endian_int, Binary, binary, CountableList
 from hashlib import sha256
 from ecdsa import SigningKey, VerifyingKey, SECP256k1
 from ecdsa.util import sigencode_string_canonize
@@ -37,21 +37,25 @@ class WCCallback:
         self.wc_client= None # set on wallet_connect_initiate_session()
         self.sato_client= sato_client # manage a pysatochip CardConnector object, None by default as not  available during init, updated later
         self.sato_handler= sato_handler # manage UI
-        self.wc_chain_id= 1 # Ethereum by default # TODO: supports other chains?
+        self.wc_chain_id= 3 # Ropsten Ethereum by default # TODO: supports other chains?
         self.wc_bip32_path="" # default, to be updated
         
-    def wallet_connect_initiate_session(self, wc_session: WCSession, bip32_path: str, chain_id: int):
+    def wallet_connect_initiate_session(self, wc_session: WCSession, bip32_path: str, chain_id: int, bip32_child=None, bip32_parent=None):
         logger.info(f"CALLBACK: wallet_connect_initiate_session WCSession={WCSession} - bip32_path={bip32_path}")
         self.wc_session= wc_session
-        self.wc_bip32_path= bip32_path
+        #self.wc_bip32_path= bip32_path
         self.wc_chain_id= chain_id
-        # get address corresponding to bip32_path 
-        try:
-            (self.wc_pubkey, self.wc_chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
-            self.wc_address= self.pubkey_to_ethereum_address(self.wc_pubkey.get_public_key_bytes(compressed=False))
-        except Exception as ex:
-            logger.warning(f"CALLBACK: exception in wallet_connect_initiate_session: {ex}")
-            return
+        self.bip32_child= bip32_child
+        self.bip32_parent= bip32_parent
+        self.wc_bip32_path= bip32_child["bip32_path"]
+        self.wc_address= bip32_child["address"]
+        # get address corresponding to bip32_path - deprecate?
+        # try:
+            # (self.wc_pubkey, self.wc_chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
+            # self.wc_address= self.pubkey_to_ethereum_address(self.wc_pubkey.get_public_key_bytes(compressed=False))
+        # except Exception as ex:
+            # logger.warning(f"CALLBACK: exception in wallet_connect_initiate_session: {ex}")
+            # return
         # set wc objects
         self.wc_client= WCClient()
         self.wc_client.set_callback(self)
@@ -65,7 +69,22 @@ class WCCallback:
         (event, values)= self.sato_client.request('wallet_connect_approve_new_session', remote_peer_meta)
         if event== 'Submit':
             logger.info("WalletConnection to Satochip approved!")
-            self.wc_client.approveSession([self.wc_address], self.wc_chain_id)
+            
+            name = remote_peer_meta.name
+            # url = remote_peer_meta.url
+            # description = remote_peer_meta.description
+            # icons = remote_peer_meta.icons
+            if (name== "WalletConnect for Metamask"):
+                # TODO: check url? + description?
+                parent_pubkey= self.bip32_parent['pubkey']
+                parent_chaincode= self.bip32_parent['chaincode']
+                child_pubkey= self.bip32_child['pubkey']
+                bip32_path= self.bip32_parent['bip32_path']
+                logger.info("accounts= " + str([parent_pubkey, parent_chaincode, child_pubkey, bip32_path]))
+                self.wc_client.approveSession([parent_pubkey, parent_chaincode, child_pubkey, bip32_path], self.wc_chain_id)
+            else:
+                self.wc_address= self.bip32_child['address']
+                self.wc_client.approveSession([self.wc_address], self.wc_chain_id)
             self.wc_remote_peer_meta= remote_peer_meta
             self.sato_handler.show_notification("Notification","WalletConnection to Satochip approved by user!")
         else:
@@ -160,35 +179,110 @@ class WCCallback:
         else:
             logger.info(f"CALLBACK Approve signature? NO!")
             self.wc_client.rejectRequest(id_)
+    
+    # todo: apply to every input 
+    def normalize(self, ins):
+        ''' Normalize input
+            For strings, remove any 'Ox' prefix, and ensure that number of chars is even
+        '''
+        if type(ins) is str:
+            out= ins.replace("0x", "")
+            if len(out)%2 == 1:
+                out= "0" + out
+            logger.info("in normalize: " +str(ins) +  " "  + str(out)) # debug tmp
+            return out
+        return ins
         
     def onEthSignTransaction(self, id_, param: WCEthereumTransaction):
         logger.info("CALLBACK: onEthSignTransaction")
+        logger.info("CALLBACK: onEthSignTransaction param= " + str(param))
+        logger.info(f"param.gas= {param.gas}")
+        logger.info(f"param.gasLimit= {param.gasLimit}")
+        logger.info(f"param.type_= {param.type_}")
         # parse tx
-        from_= param.from_
-        to= param.to.strip("0x")
-        data= param.data.strip("0x")
-        gas= param.gas
-        gasPrice= param.gasPrice
-        value= param.value
-        nonce= param.nonce
-        tx_txt= f"To: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce} \nChainId: {self.wc_chain_id}"
-        #todo: check that from equals self.wc_address
-        if from_ != self.wc_address:
+        from_= self.normalize(param.from_)
+        to= self.normalize(param.to)
+        nonce= self.normalize(param.nonce)
+        value= self.normalize(param.value)
+        data= self.normalize(param.data)
+        if (param.gas is not None):
+            gas= self.normalize(param.gas) # gas or gasLimit maybe  None
+        elif (param.gasLimit is not None):
+            gas= self.normalize(param.gasLimit) 
+        else:
+            logger.warning(f"CALLBACK: exception in onEthSignTransaction: no gas value present")
+            self.wc_client.rejectRequest(id_)
+        if (param.chainId is not None):
+            chainId= param.chainId
+        else:
+            chainId= self.wc_chain_id
+            
+        # Legacy, EIP 1559
+        type_= param.type_
+        if (type_ is None or type_== 0): # legacy
+            gasPrice= self.normalize(param.gasPrice) 
+            tx_txt= f"Legacy transaction: \nTo: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce} \nChainId: {chainId}"
+            tx_obj= Transaction( # EIP155
+                nonce= int(nonce, 16),
+                gas_price=int(gasPrice, 16), 
+                gas= int(gas, 16), 
+                to=bytes.fromhex(to),  
+                value= int(value, 16), 
+                data= bytes.fromhex(data),      
+                v= chainId, 
+                r=0,
+                s=0,
+            )
+            tx_bytes= rlp.encode(tx_obj)
+        
+        elif type_==1: # eip2930
+            gasPrice= self.normalize(param.gasPrice) 
+            accessList = param.accessList # TODO
+            logger.info(f"param.accessList= {param.accessList}")
+            tx_txt= f"EIP2930 transaction: \nTo: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
+            tx_bytes= [] # TODO!
+             
+        elif type_==2: # eip1559
+            maxPriorityFeePerGas= param.maxPriorityFeePerGas
+            maxFeePerGas= param.maxFeePerGas
+            accessList= param.accessList # TODO
+            logger.info(f"param.accessList= {param.accessList}")
+            tx_txt= f"EIP1559 transaction: \nTo: 0x{to} \nValue: {value} \nGas: {gas} \MaxFeePerGas: {maxFeePerGas} \MaxPriorityFeePerGas: {maxPriorityFeePerGas} \nData: 0x{data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
+            tx_obj= TransactionEIP1559(
+                chain_id= chainId,
+                nonce= int(nonce, 16),
+                max_priority_fee_per_gas=int(maxPriorityFeePerGas, 16), 
+                max_fee_per_gas=int(maxFeePerGas, 16), 
+                gas= int(gas, 16), 
+                to=bytes.fromhex(to),  
+                value= int(value, 16), 
+                data= bytes.fromhex(data),      
+                access_list= accessList # TODO: parse accessList
+            )
+            tx_bytes= bytes([2]) + rlp.encode(tx_obj)
+        
+        else:
+            logger.warning(f"CALLBACK: exception in onEthSignTransaction: wrong transaction type: {type_}")
+            self.wc_client.rejectRequest(id_)
+        
+        # check that from equals self.wc_address
+        from_address= '0x'+from_
+        if from_address != self.wc_address:
             tx_txt+=f"\nWARNING: transaction 'From' value ({from_}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this transaction!"
         
         # build tx
-        tx_obj= Transaction( # EIP155
-                            nonce= int(nonce, 16),
-                            gas_price=int(gasPrice, 16), 
-                            gas= int(gas, 16), 
-                            to=bytes.fromhex(to),  
-                            value= int(value, 16), 
-                            data= bytes.fromhex(data),      
-                            v= self.wc_chain_id,
-                            r=0,
-                            s=0,
-        )
-        tx_bytes= rlp.encode(tx_obj)
+        # tx_obj= Transaction( # EIP155
+                            # nonce= int(nonce, 16),
+                            # gas_price=int(gasPrice, 16), 
+                            # gas= int(gas, 16), 
+                            # to=bytes.fromhex(to),  
+                            # value= int(value, 16), 
+                            # data= bytes.fromhex(data),      
+                            # v= chainId, 
+                            # r=0,
+                            # s=0,
+        # )
+        # tx_bytes= rlp.encode(tx_obj)
         logger.info(f"CALLBACK: onEthSignTransaction - tx_bytes= {tx_bytes.hex()}")
         tx_hash= keccak(tx_bytes)
         logger.info(f"CALLBACK: onEthSignTransaction - tx_hash= {tx_hash.hex()}")
@@ -197,13 +291,14 @@ class WCCallback:
         is_approved= False
         hmac= None
         if self.sato_client.cc.needs_2FA:
+            # TODO
             # construct request msg for 2FA
             msg={}
             msg['action']= "sign_tx_hash"
             msg['tx']= tx_bytes.hex()
             msg['hash']= tx_hash.hex()
             msg['from']= self.wc_address 
-            msg['chainId']= self.wc_chain_id # optionnal, otherwise taken from tx deserialization...
+            msg['chainId']= chainId # optionnal, otherwise taken from tx deserialization...
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
         else: 
             # request user approval via GUI
@@ -230,23 +325,24 @@ class WCCallback:
                 sigstring= sigstring[1:]+sigstring[0:1] # for walletconnect, the v byte is appended AFTER r,s...
                 logger.info(f"CALLBACK: onEthSignTransaction - sigstring= {sigstring.hex()}")
                 sign_hex= "0x"+sigstring.hex()
+                # for debug purpose: build signed tx
                 # https://flightwallet.github.io/decode-eth-tx/
                 # https://www.ethereumdecoder.com/
                 # https://antoncoding.github.io/eth-tx-decoder/
-                tx_obj_signed= Transaction(
-                                    nonce= int(nonce, 16),
-                                    gas_price=int(gasPrice, 16), 
-                                    gas= int(gas, 16), 
-                                    to=bytes.fromhex(to),  
-                                    value= int(value, 16), 
-                                    data= bytes.fromhex(data),   
-                                    v= v+35+2*self.wc_chain_id, #EIP155
-                                    r= r,
-                                    s= s,
-                )
-                tx_bytes_signed= rlp.encode(tx_obj_signed)
-                tx_raw_hex= "0x"+tx_bytes_signed.hex()
-                logger.info(f"CALLBACK: onEthSignTransaction - tx_raw_hex= {tx_raw_hex}")
+                # tx_obj_signed= Transaction(
+                                    # nonce= int(nonce, 16),
+                                    # gas_price=int(gasPrice, 16), 
+                                    # gas= int(gas, 16), 
+                                    # to=bytes.fromhex(to),  
+                                    # value= int(value, 16), 
+                                    # data= bytes.fromhex(data),   
+                                    # v= v+35+2*chainId, #EIP155
+                                    # r= r,
+                                    # s= s,
+                # )
+                # tx_bytes_signed= rlp.encode(tx_obj_signed)
+                # tx_raw_hex= "0x"+tx_bytes_signed.hex()
+                # logger.info(f"CALLBACK: onEthSignTransaction - tx_raw_hex= {tx_raw_hex}")
                 self.wc_client.approveRequest(id_, sign_hex)
             except Exception as ex:
                 logger.warning(f"CALLBACK: exception in onEthSignTransaction: {ex}")
@@ -329,6 +425,28 @@ class Transaction(rlp.Serializable):
         ("v", big_endian_int),
         ("r", big_endian_int),
         ("s", big_endian_int),
+    ]
+
+# https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1559.md
+# 0x02 || rlp([chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list, signature_y_parity, signature_r, signature_s])
+# https://github.com/ethereum/py-evm/blob/master/eth/vm/forks/london/transactions.py
+class AccountAccesses(rlp.Serializable):
+    fields = [
+        ('account', Binary.fixed_length(20, allow_empty=True)),
+        ('storage_keys', CountableList(BigEndianInt(32))),
+    ]
+
+class TransactionEIP1559(rlp.Serializable):
+    fields = [
+        ("chain_id", big_endian_int),
+        ("nonce", big_endian_int),
+        ("max_priority_fee_per_gas", big_endian_int),
+        ("max_fee_per_gas", big_endian_int),
+        ("gas", big_endian_int),
+        ("to", Binary.fixed_length(20, allow_empty=True)),
+        ("value", big_endian_int),
+        ("data", binary),
+        ("access_list", CountableList(AccountAccesses)),
     ]
 
 class TransactionUnsigned(rlp.Serializable):

@@ -421,7 +421,7 @@ class HandlerSimpleGUI:
             [sg.Text("Select the chainId: ", size=(20, 1)), 
                 sg.InputCombo(CHAINID_LIST, key='chain_id', size=(20, 1)),
                 sg.Text("",size=(5, 1))], 
-            [sg.Text("Select the bip32 path: ", size=(20, 1)), 
+            [sg.Text("Select the bip32 path & index: ", size=(20, 1)), 
                 sg.InputCombo(BIP32_PATH_LIST, key='bip32_path', size=(20, 1), enable_events=True), 
                 sg.InputText(default_text = "0", key='bip32_index', size=(5, 1), enable_events=True) ], 
             [sg.Text("Corresponding address: ", size=(20, 1)), sg.Text(address, key='bip32_address')],
@@ -477,6 +477,22 @@ class HandlerSimpleGUI:
                     check= re.match("^(m/)?(\d+'?/)*\d+'?$", bip32_path); # https://stackoverflow.com/questions/61554569/bip32-derivepath-different-privatekey-in-nodejs-and-dartflutter-same-mnemonic
                     if check is None:
                         raise ValueError(f"Wrong bip32 path format!") 
+                    # get pubkey & chaincode
+                    (pubkey, chaincode_bytes)= self.client.cc.card_bip32_get_extendedkey(bip32_path)
+                    pubkey_bytes= pubkey.get_public_key_bytes(compressed=False)
+                    pubkey_hex= pubkey_bytes.hex()
+                    chaincode_hex= chaincode_bytes.hex()
+                    address= self.wc_callback.pubkey_to_ethereum_address(pubkey_bytes)
+                    bip32_child= {'bip32_path':bip32_path, 'pubkey':pubkey_hex, 'chaincode':chaincode_hex, 'address':address}
+                    values['bip32_child']= bip32_child
+                    # get parent pubkey & chaincode
+                    parent_bip32_path= values["bip32_path"]
+                    (parent_pubkey, parent_chaincode_bytes)= self.client.cc.card_bip32_get_extendedkey(parent_bip32_path)
+                    parent_pubkey_bytes= parent_pubkey.get_public_key_bytes(compressed=False)
+                    parent_pubkey_hex= parent_pubkey_bytes.hex()
+                    parent_chaincode_hex= parent_chaincode_bytes.hex()
+                    bip32_parent= {'bip32_path':parent_bip32_path, 'pubkey':parent_pubkey_hex, 'chaincode':parent_chaincode_hex}
+                    values['bip32_parent']= bip32_parent
                 except ValueError as ex: 
                     window['-OUTPUT-'].update(str(ex))
                     continue
@@ -969,9 +985,11 @@ class HandlerSimpleGUI:
                 event_create, values_create = self.wallet_connect_create_new_session()
                 if (event_create=='Submit'):
                     wc_session= values_create['wc_session']
-                    bip32_path= values_create['bip32_path']
                     chain_id= values_create['chain_id']
-                    self.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path, chain_id) # todo: create callaback in satochipBridge and add ref in handler directly?
+                    bip32_path= values_create['bip32_path'] # deprecate?
+                    bip32_child= values_create['bip32_child']
+                    bip32_parent= values_create['bip32_parent']
+                    self.wc_callback.wallet_connect_initiate_session(wc_session, bip32_path, chain_id, bip32_child, bip32_parent) # todo: create callaback in satochipBridge and add ref in handler directly?
                 else:
                     continue
             

@@ -7,6 +7,7 @@ SimpleWebSocketServer==0.1.1
 pyscard==1.9.9
 pysatochip==0.12.3
 cryptography==3.3.2
+rlp==2.0.1
 certifi
 
 # GUI
