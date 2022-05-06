@@ -8,12 +8,12 @@ It also allows a javascript to connect to a Satochip from the browser as in the 
 
 Python dependencies can be installed with:
     
-    $ python3 -m pip install -r requirements.txt
+    $ python3 -m pip install -r contrib/requirements/requirements.txt
     
 
 ## Run from sources
     
-    $ python3 satochip_bridge/Satochip-bridge.py
+    $ python3 satochip_bridge/SatochipBridge.py
     
 
 ## Build the Linux binaries
