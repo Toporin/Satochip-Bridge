@@ -22,14 +22,17 @@ from pywalletconnectv1.models.ethereum.wc_ethereum_switch_chain import WCEthereu
 
 try: 
     from sato2FA import Sato2FA
+    from utils import CKD_pub
 except Exception as e:
     print('ImportError: '+repr(e))
     from satochip_bridge.sato2FA import Sato2FA
+    from satochip_bridge.utils import CKD_pub
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 CURVE_ORDER = SECP256k1.order
+MAX_INDEX = 1000 # should be same as eth-walletconnect-keyring constant
 
 class WCCallback:
     
@@ -40,15 +43,23 @@ class WCCallback:
         self.wc_chain_id= 3 # Ropsten Ethereum by default # TODO: supports other chains?
         self.wc_bip32_path="" # default, to be updated
         
-    def wallet_connect_initiate_session(self, wc_session: WCSession, bip32_path: str, chain_id: int, bip32_child=None, bip32_parent=None):
-        logger.info(f"CALLBACK: wallet_connect_initiate_session WCSession={WCSession} - bip32_path={bip32_path}")
+    def wallet_connect_initiate_session(self, wc_session: WCSession, chain_id: int, bip32_child=None, bip32_parent=None):
+        logger.info(f"CALLBACK: wallet_connect_initiate_session WCSession={WCSession}")
         self.wc_session= wc_session
         #self.wc_bip32_path= bip32_path
         self.wc_chain_id= chain_id
         self.bip32_child= bip32_child
         self.bip32_parent= bip32_parent
-        self.wc_bip32_path= bip32_child["bip32_path"]
-        self.wc_address= bip32_child["address"]
+        if bip32_child is not None:
+            self.for_metamask= False
+            self.wc_bip32_path= bip32_child["bip32_path"]
+            self.wc_address= bip32_child["address"]
+        if bip32_parent is not None:
+            # when used for Metamask, the address and child bip32_path is defined on the Metmamask side during pairing
+            self.for_metamask= True
+            self.wc_bip32_path= None #bip32_parent["bip32_path"]
+            self.wc_address= None
+        # TODO: if both parent and child are None, we have an issue
         # get address corresponding to bip32_path - deprecate?
         # try:
             # (self.wc_pubkey, self.wc_chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
@@ -78,10 +89,10 @@ class WCCallback:
                 # TODO: check url? + description?
                 parent_pubkey= self.bip32_parent['pubkey']
                 parent_chaincode= self.bip32_parent['chaincode']
-                child_pubkey= self.bip32_child['pubkey']
+                #child_pubkey= self.bip32_child['pubkey']
                 bip32_path= self.bip32_parent['bip32_path']
-                logger.info("accounts= " + str([parent_pubkey, parent_chaincode, child_pubkey, bip32_path]))
-                self.wc_client.approveSession([parent_pubkey, parent_chaincode, child_pubkey, bip32_path], self.wc_chain_id)
+                logger.info("accounts= " + str([parent_pubkey, parent_chaincode, bip32_path]))
+                self.wc_client.approveSession([parent_pubkey, parent_chaincode, bip32_path], self.wc_chain_id)
             else:
                 self.wc_address= self.bip32_child['address']
                 self.wc_client.approveSession([self.wc_address], self.wc_chain_id)
@@ -156,9 +167,16 @@ class WCCallback:
         if is_approved:
             logger.info(f"CALLBACK Approve signature? YES!")
             try:
+                # for Metamask, must recover bip32_path from address
+                if (self.for_metamask):
+                    bip32_path= self.get_path_from_address(address)
+                else:
+                    bip32_path= self.wc_bip32_path
                 # derive key
-                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
+                logger.debug(f"Derivation path= {bip32_path}")
+                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
                 logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
+                logger.debug(f"Address= {self.pubkey_to_ethereum_address(pubkey.get_public_key_bytes(compressed=False))}")
                 #sign msg hash
                 keynbr=0xFF
                 (response, sw1, sw2)=self.sato_client.cc.card_sign_transaction_hash(keynbr, list(msg_hash), hmac)
@@ -221,7 +239,7 @@ class WCCallback:
         type_= param.type_
         if (type_ is None or type_== 0): # legacy
             gasPrice= self.normalize(param.gasPrice) 
-            tx_txt= f"Legacy transaction: \nTo: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce} \nChainId: {chainId}"
+            tx_txt= f"Legacy transaction: \nFrom: 0x{from_} \nTo: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce} \nChainId: {chainId}"
             tx_obj= Transaction( # EIP155
                 nonce= int(nonce, 16),
                 gas_price=int(gasPrice, 16), 
@@ -239,15 +257,17 @@ class WCCallback:
             gasPrice= self.normalize(param.gasPrice) 
             accessList = param.accessList # TODO
             logger.info(f"param.accessList= {param.accessList}")
-            tx_txt= f"EIP2930 transaction: \nTo: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
+            tx_txt= f"EIP2930 transaction: \nFrom: 0x{from_} \nTo: 0x{to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: 0x{data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
             tx_bytes= [] # TODO!
+            logger.warning(f"CALLBACK: exception in onEthSignTransaction: unsupported transaction type: {type_}")
+            self.wc_client.rejectRequest(id_)
              
         elif type_==2: # eip1559
             maxPriorityFeePerGas= param.maxPriorityFeePerGas
             maxFeePerGas= param.maxFeePerGas
             accessList= param.accessList # TODO
             logger.info(f"param.accessList= {param.accessList}")
-            tx_txt= f"EIP1559 transaction: \nTo: 0x{to} \nValue: {value} \nGas: {gas} \MaxFeePerGas: {maxFeePerGas} \MaxPriorityFeePerGas: {maxPriorityFeePerGas} \nData: 0x{data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
+            tx_txt= f"EIP1559 transaction: \nFrom: 0x{from_} \nTo: 0x{to} \nValue: {value} \nGas: {gas} \nMaxFeePerGas: {maxFeePerGas} \nMaxPriorityFeePerGas: {maxPriorityFeePerGas} \nData: 0x{data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
             tx_obj= TransactionEIP1559(
                 chain_id= chainId,
                 nonce= int(nonce, 16),
@@ -262,27 +282,14 @@ class WCCallback:
             tx_bytes= bytes([2]) + rlp.encode(tx_obj)
         
         else:
-            logger.warning(f"CALLBACK: exception in onEthSignTransaction: wrong transaction type: {type_}")
+            logger.warning(f"CALLBACK: exception in onEthSignTransaction: unsupported transaction type: {type_}")
             self.wc_client.rejectRequest(id_)
         
         # check that from equals self.wc_address
         from_address= '0x'+from_
-        if from_address != self.wc_address:
+        if (from_address != self.wc_address) and (self.wc_address is not None):
             tx_txt+=f"\nWARNING: transaction 'From' value ({from_}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this transaction!"
         
-        # build tx
-        # tx_obj= Transaction( # EIP155
-                            # nonce= int(nonce, 16),
-                            # gas_price=int(gasPrice, 16), 
-                            # gas= int(gas, 16), 
-                            # to=bytes.fromhex(to),  
-                            # value= int(value, 16), 
-                            # data= bytes.fromhex(data),      
-                            # v= chainId, 
-                            # r=0,
-                            # s=0,
-        # )
-        # tx_bytes= rlp.encode(tx_obj)
         logger.info(f"CALLBACK: onEthSignTransaction - tx_bytes= {tx_bytes.hex()}")
         tx_hash= keccak(tx_bytes)
         logger.info(f"CALLBACK: onEthSignTransaction - tx_hash= {tx_hash.hex()}")
@@ -297,7 +304,7 @@ class WCCallback:
             msg['action']= "sign_tx_hash"
             msg['tx']= tx_bytes.hex()
             msg['hash']= tx_hash.hex()
-            msg['from']= self.wc_address 
+            msg['from']= from_address #self.wc_address TODO
             msg['chainId']= chainId # optionnal, otherwise taken from tx deserialization...
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
         else: 
@@ -309,8 +316,13 @@ class WCCallback:
         if is_approved:
             logger.info(f"CALLBACK Approve tx signature? YES!")
             try:
+                # for Metamask, must recover bip32_path from address
+                if (self.for_metamask):
+                    bip32_path= self.get_path_from_address(from_address)
+                else:
+                    bip32_path= self.wc_bip32_path
                 # derive key
-                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
+                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
                 logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
                 # sign hash
                 keynbr=0xFF
@@ -413,7 +425,30 @@ class WCCallback:
         tx_bytes= tx_json.encode('utf-8')
         tx_hash= keccak(tx_bytes)
         return tx_hash
-        
+    
+    def get_path_from_address(self, address: str) -> str:
+        """ returns the index corresponding to a given address, presumably BIP32 derived from chaincode and pubkey
+        """
+        logger.info(f"CALLBACK: get_index_from_address address={address}")
+        address= address.lower()
+        parent_bip32_path= self.bip32_parent['bip32_path']
+        logger.info(f"CALLBACK: get_index_from_address parent_bip32_path={parent_bip32_path}")
+        parent_chaincode_hex= self.bip32_parent['chaincode']
+        parent_pubkey_hex=  self.bip32_parent['pubkey']
+        parent_chaincode_bytes= bytes.fromhex(parent_chaincode_hex)
+        parent_pubkey_bytes= bytes.fromhex(parent_pubkey_hex) # TODO: check: should be in compressed form
+        for child_index in range(0, MAX_INDEX):
+            logger.info(f"CALLBACK: get_index_from_address try index={child_index}")
+            (child_pubkey_bytes, child_chaincode_bytes)= CKD_pub(parent_pubkey_bytes, parent_chaincode_bytes, child_index)
+            child_address= self.pubkey_to_ethereum_address(child_pubkey_bytes)
+            logger.info(f"CALLBACK: get_index_from_address try address={child_address}")
+            if (child_address== address):
+                logger.info(f"CALLBACK: get_index_from_address found index={child_index}")
+                child_bip32_path= parent_bip32_path + str(child_index)
+                logger.info(f"CALLBACK: get_index_from_address found path={child_bip32_path}")
+                return child_bip32_path
+        return ""
+    
 class Transaction(rlp.Serializable):
     fields = [
         ("nonce", big_endian_int),
