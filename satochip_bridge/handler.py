@@ -91,8 +91,7 @@ class HandlerSimpleGUI:
         self.satochip_unpaired_icon= self.icon_path("satochip_unpaired.png") #"satochip_unpaired.png"
          # WalletConnect
         self.wc_callback= WCCallback(sato_client=None, sato_handler=self) # sato_client is not available during init
-        #self.wc_callback_metamask= WCCallback(sato_client=None, sato_handler=self) # Metamask uses a slightly different initialization where bip32 pubkey+chaincode is sent instead of account address
-         
+        
     def icon_path(self, icon_basename):
         #return resource_path(icon_basename)
         return os.path.join(self.pkg_dir, icon_basename)
@@ -163,8 +162,6 @@ class HandlerSimpleGUI:
         
         is_PIN= True if event=='Submit' else False 
         pin = values['pin']
-        # logger.debug("Type of pin from getpass:"+str(type(pin)))
-        # logger.debug("Type of event from getpass:"+str(type(event))+str(event))
         return (is_PIN, pin)
         
     def QRDialog(self, data, parent=None, title = "Satochip-Bridge: QR code", show_text=False, msg= ''):
@@ -195,8 +192,6 @@ class HandlerSimpleGUI:
             pyperclip.copy('') #purge 2FA from clipboard
         except: 
             pass
-        # logger.debug("Event:"+str(type(event))+str(event))
-        # logger.debug("Values:"+str(type(values))+str(values))
         return (event, values)
     
     def reset_seed_dialog(self, msg):
@@ -226,8 +221,6 @@ class HandlerSimpleGUI:
         
         logger.debug("Event:"+str(type(event))+str(event))
         logger.debug("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'create': True, 'restore': False}
         return (event, values)
         
     def create_seed(self, seed):    
@@ -263,8 +256,6 @@ class HandlerSimpleGUI:
             pass
         logger.debug("Event:"+str(type(event))+str(event))
         logger.debug("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'use_passphrase': False}
         return (event, values)
         
     def request_passphrase(self):
@@ -283,8 +274,6 @@ class HandlerSimpleGUI:
         
         logger.debug("Event:"+str(type(event))+str(event))
         logger.debug("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'passphrase': 'toto'}
         return (event, values)
         
         
@@ -302,8 +291,6 @@ class HandlerSimpleGUI:
         
         logger.debug("Event:"+str(type(event))+str(event))
         logger.debug("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'seed_confirm': 'AA ZZ'}
         return (event, values)
         
     def confirm_passphrase(self):
@@ -320,8 +307,6 @@ class HandlerSimpleGUI:
         
         logger.debug("Event:"+str(type(event))+str(event))
         logger.debug("Values:"+str(type(values))+str(values))
-        #Event:<class 'str'>Next
-        #Values:<class 'dict'>{'seed_confirm': 'AA ZZ'}
         return (event, values)
         
     def restore_from_seed(self):
@@ -347,9 +332,6 @@ class HandlerSimpleGUI:
                 break
         window.close()
         del window
-        
-        # logger.debug("Event:"+str(type(event))+str(event))
-        # logger.debug("Values:"+str(type(values))+str(values))
         return (event, values)
     
     ### 2FA actions ###
@@ -509,28 +491,8 @@ class HandlerSimpleGUI:
                         bip32_child= {'bip32_path':bip32_path, 'pubkey':pubkey_hex, 'chaincode':chaincode_hex, 'address':address}
                         values['bip32_child']= bip32_child
                         values['bip32_parent']= None
-                        values["bip32_path"]= values["bip32_path"] + values["bip32_index"]
+                        #values["bip32_path"]= values["bip32_path"] + values["bip32_index"]
                         values["chain_id"]= int(values["chain_id"].split(" - ")[0], 16) # convert hex to int
-                    # bip32_path= values["bip32_path"] + values["bip32_index"]
-                    # check= re.match("^(m/)?(\d+'?/)*\d+'?$", bip32_path); # https://stackoverflow.com/questions/61554569/bip32-derivepath-different-privatekey-in-nodejs-and-dartflutter-same-mnemonic
-                    # if check is None:
-                        # raise ValueError(f"Wrong bip32 path format!") 
-                    # # get pubkey & chaincode
-                    # (pubkey, chaincode_bytes)= self.client.cc.card_bip32_get_extendedkey(bip32_path)
-                    # pubkey_bytes= pubkey.get_public_key_bytes(compressed=False)
-                    # pubkey_hex= pubkey_bytes.hex()
-                    # chaincode_hex= chaincode_bytes.hex()
-                    # address= self.wc_callback.pubkey_to_ethereum_address(pubkey_bytes)
-                    # bip32_child= {'bip32_path':bip32_path, 'pubkey':pubkey_hex, 'chaincode':chaincode_hex, 'address':address}
-                    # values['bip32_child']= bip32_child
-                    # get parent pubkey & chaincode
-                    # parent_bip32_path= values["bip32_path"]
-                    # (parent_pubkey, parent_chaincode_bytes)= self.client.cc.card_bip32_get_extendedkey(parent_bip32_path)
-                    # parent_pubkey_bytes= parent_pubkey.get_public_key_bytes(compressed=False)
-                    # parent_pubkey_hex= parent_pubkey_bytes.hex()
-                    # parent_chaincode_hex= parent_chaincode_bytes.hex()
-                    # bip32_parent= {'bip32_path':parent_bip32_path, 'pubkey':parent_pubkey_hex, 'chaincode':parent_chaincode_hex}
-                    # values['bip32_parent']= bip32_parent
                 except ValueError as ex: 
                     window['-OUTPUT-'].update(str(ex))
                     continue
@@ -1032,7 +994,6 @@ class HandlerSimpleGUI:
                 if (event_create=='Submit'):
                     wc_session= values_create['wc_session']
                     chain_id= values_create['chain_id']
-                    #bip32_path= values_create['bip32_path'] # deprecate?
                     bip32_child= values_create['bip32_child'] # for walletconnect, the address is chosen by user on the bridge
                     bip32_parent= values_create['bip32_parent'] # for Metamask, we provide parent chaincode and pubkey, the actual address is chosen by user on Metamask
                     self.wc_callback.wallet_connect_initiate_session(wc_session, chain_id, bip32_child, bip32_parent) # todo: create callback in satochipBridge and add ref in handler directly?

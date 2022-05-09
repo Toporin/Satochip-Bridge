@@ -148,6 +148,11 @@ class WCCallback:
         msg_hash= self.msgtohash(msg_bytes)
         logger.info(f"CALLBACK: onEthSign - msg_hash= {msg_hash.hex()}")
         
+        # check that from equals self.wc_address
+        msg_address= self.wc_address
+        if (self.wc_address is not None) and (address != self.wc_address):
+            msg_address=f"WARNING: request ({address}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this request!"
+        
         is_approved= False
         hmac= None
         if self.sato_client.cc.needs_2FA:
@@ -160,7 +165,7 @@ class WCCallback:
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
         else: 
             # request user approval via GUI
-            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, msg_txt)
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", msg_address, msg_txt)
             if event== 'Yes':
                 is_approved= True
                 
@@ -219,6 +224,7 @@ class WCCallback:
         logger.info(f"param.type_= {param.type_}")
         # parse tx
         from_= self.normalize(param.from_)
+        from_address= '0x'+from_
         to= self.normalize(param.to)
         nonce= self.normalize(param.nonce)
         value= self.normalize(param.value)
@@ -286,9 +292,8 @@ class WCCallback:
             self.wc_client.rejectRequest(id_)
         
         # check that from equals self.wc_address
-        from_address= '0x'+from_
-        if (from_address != self.wc_address) and (self.wc_address is not None):
-            tx_txt+=f"\nWARNING: transaction 'From' value ({from_}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this transaction!"
+        if (self.wc_address is not None) and (from_address != self.wc_address):
+            tx_txt+=f"\nWARNING: transaction 'From' value ({from_address}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this transaction!"
         
         logger.info(f"CALLBACK: onEthSignTransaction - tx_bytes= {tx_bytes.hex()}")
         tx_hash= keccak(tx_bytes)
@@ -309,7 +314,7 @@ class WCCallback:
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
         else: 
             # request user approval via GUI
-            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", self.wc_address, tx_txt)
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", from_address, tx_txt)
             if event== 'Yes':
                 is_approved= True
         
