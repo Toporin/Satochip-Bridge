@@ -685,9 +685,8 @@ class HandlerSimpleGUI:
                                                             '&Reset seed', 
                                                             '&2FA options', 
                                                             '&Start WalletConnect', 
-                                                            '&Stop WalletConnect', 
                                                             '&Connect to Metamask', 
-                                                            '&Unconnect Metamask', 
+                                                            '&Disconnect all', 
                                                             '&About', 
                                                             '&Quit']]
         if card_present:
@@ -1001,7 +1000,7 @@ class HandlerSimpleGUI:
                     continue
             
             # WALLETCONNECT/METAMASK STOP
-            elif menu_item== 'Stop WalletConnect' or menu_item== 'Unconnect Metamask':
+            elif menu_item== 'Disconnect all': # 'Stop WalletConnect' or menu_item== 'Unconnect Metamask':
                 if self.wc_callback.wc_client is not None:
                     self.wallet_connect_close_session()
                 else:
