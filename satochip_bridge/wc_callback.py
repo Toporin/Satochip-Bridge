@@ -1,6 +1,9 @@
 import logging
 import os
 import rlp
+import sys
+from os import path
+from configparser import ConfigParser
 from rlp.sedes import BigEndianInt, big_endian_int, Binary, binary, CountableList
 from hashlib import sha256
 from ecdsa import SigningKey, VerifyingKey, SECP256k1
@@ -8,7 +11,6 @@ from ecdsa.util import sigencode_string_canonize
 from ecdsa.curves import SECP256k1
 from eth_hash.auto import keccak
 from pykson import Pykson
-from configparser import ConfigParser
 from datetime import datetime
 
 from pywalletconnectv1.wc_client import WCClient
@@ -40,7 +42,7 @@ class WCCallback:
         self.wc_client= None # set on wallet_connect_initiate_session()
         self.sato_client= sato_client # manage a pysatochip CardConnector object, None by default as not  available during init, updated later
         self.sato_handler= sato_handler # manage UI
-        self.wc_chain_id= 3 # Ropsten Ethereum by default # TODO: supports other chains?
+        self.wc_chain_id= 1 # Ropsten Ethereum by default # TODO: supports other chains?
         self.wc_bip32_path="" # default, to be updated
 
     def wallet_connect_initiate_session(self, wc_session: WCSession, chain_id: int, bip32_child=None, bip32_parent=None):
@@ -209,12 +211,9 @@ class WCCallback:
             return out
         return ins
 
-    def onEthSignTransaction(self, id_, param: WCEthereumTransaction):
-        logger.info("CALLBACK: onEthSignTransaction")
-        logger.info("CALLBACK: onEthSignTransaction param= " + str(param))
-        logger.info(f"param.gas= {param.gas}")
-        logger.info(f"param.gasLimit= {param.gasLimit}")
-        logger.info(f"param.type_= {param.type_}")
+    def processTransaction(self, id_, param: WCEthereumTransaction, action: str):
+        logger.info("CALLBACK: processTransaction")
+        logger.info(f"CALLBACK: action= {action}")
         # parse tx
         from_= param.from_
         to= param.to
@@ -226,29 +225,12 @@ class WCCallback:
         elif (param.gasLimit is not None):
             gas= param.gasLimit
         else:
-            logger.warning(f"CALLBACK: exception in onEthSignTransaction: no gas value present")
+            logger.warning(f"CALLBACK: exception in processTransaction: no gas value present")
             self.wc_client.rejectRequest(id_)
         if (param.chainId is not None):
             chainId= param.chainId
         else: # default
             chainId= self.wc_chain_id
-        # from_= param.from_ #self.normalize(param.from_)
-        # from_address= '0x'+from_
-        # to= self.normalize(param.to)
-        # nonce= self.normalize(param.nonce)
-        # value= self.normalize(param.value)
-        # data= self.normalize(param.data)
-        # if (param.gas is not None):
-            # gas= self.normalize(param.gas) # gas or gasLimit maybe  None
-        # elif (param.gasLimit is not None):
-            # gas= self.normalize(param.gasLimit)
-        # else:
-            # logger.warning(f"CALLBACK: exception in onEthSignTransaction: no gas value present")
-            # self.wc_client.rejectRequest(id_)
-        # if (param.chainId is not None):
-            # chainId= param.chainId
-        # else:
-            # chainId= self.wc_chain_id
 
         # Legacy, EIP 1559
         type_= param.type_
@@ -274,7 +256,7 @@ class WCCallback:
             logger.info(f"param.accessList= {param.accessList}")
             tx_txt= f"EIP2930 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
             tx_bytes= [] # TODO!
-            logger.warning(f"CALLBACK: exception in onEthSignTransaction: unsupported transaction type: {type_}")
+            logger.warning(f"CALLBACK: exception in processTransaction: unsupported transaction type: {type_}")
             self.wc_client.rejectRequest(id_)
 
         elif type_==2: # eip1559
@@ -297,16 +279,16 @@ class WCCallback:
             tx_bytes= bytes([2]) + rlp.encode(tx_obj)
 
         else:
-            logger.warning(f"CALLBACK: exception in onEthSignTransaction: unsupported transaction type: {type_}")
+            logger.warning(f"CALLBACK: exception in processTransaction: unsupported transaction type: {type_}")
             self.wc_client.rejectRequest(id_)
 
         # check that from equals self.wc_address
         if (self.wc_address is not None) and (from_ != self.wc_address):
             tx_txt+=f"\nWARNING: transaction 'From' value ({from_}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this transaction!"
 
-        logger.info(f"CALLBACK: onEthSignTransaction - tx_bytes= {tx_bytes.hex()}")
+        logger.info(f"CALLBACK: processTransaction - tx_bytes= {tx_bytes.hex()}")
         tx_hash= keccak(tx_bytes)
-        logger.info(f"CALLBACK: onEthSignTransaction - tx_hash= {tx_hash.hex()}")
+        logger.info(f"CALLBACK: processTransaction - tx_hash= {tx_hash.hex()}")
 
         # request user approval
         is_approved= False
@@ -341,46 +323,111 @@ class WCCallback:
                 # sign hash
                 keynbr=0xFF
                 (response, sw1, sw2)= self.sato_client.cc.card_sign_transaction_hash(keynbr, list(tx_hash), hmac)
-                logger.info(f"CALLBACK: onEthSignTransaction - response= {response}")
+                logger.info(f"CALLBACK: processTransaction - response= {response}")
                 # parse sig
                 (r,s,v, sigstring)= self.sato_client.cc.parser.parse_rsv_from_dersig(bytes(response), tx_hash, pubkey)
-                logger.info(f"CALLBACK: onEthSignTransaction - r= {r}")
-                logger.info(f"CALLBACK: onEthSignTransaction - s= {s}")
-                logger.info(f"CALLBACK: onEthSignTransaction - v= {v}")
-                logger.info(f"CALLBACK: onEthSignTransaction - sigstring= {sigstring.hex()}")
+                logger.info(f"CALLBACK: processTransaction - r= {r}")
+                logger.info(f"CALLBACK: processTransaction - s= {s}")
+                logger.info(f"CALLBACK: processTransaction - v= {v}")
+                logger.info(f"CALLBACK: processTransaction - sigstring= {sigstring.hex()}")
                 sigstring= sigstring[1:]+sigstring[0:1] # for walletconnect, the v byte is appended AFTER r,s...
-                logger.info(f"CALLBACK: onEthSignTransaction - sigstring= {sigstring.hex()}")
+                logger.info(f"CALLBACK: processTransaction - sigstring= {sigstring.hex()}")
                 sign_hex= "0x"+sigstring.hex()
-                # for debug purpose: build signed tx
-                # https://flightwallet.github.io/decode-eth-tx/
-                # https://www.ethereumdecoder.com/
-                # https://antoncoding.github.io/eth-tx-decoder/
-                # tx_obj_signed= Transaction(
-                                    # nonce= int(nonce, 16),
-                                    # gas_price=int(gasPrice, 16),
-                                    # gas= int(gas, 16),
-                                    # to=bytes.fromhex(to),
-                                    # value= int(value, 16),
-                                    # data= bytes.fromhex(data),
-                                    # v= v+35+2*chainId, #EIP155
-                                    # r= r,
-                                    # s= s,
-                # )
-                # tx_bytes_signed= rlp.encode(tx_obj_signed)
-                # tx_raw_hex= "0x"+tx_bytes_signed.hex()
-                # logger.info(f"CALLBACK: onEthSignTransaction - tx_raw_hex= {tx_raw_hex}")
-                self.wc_client.approveRequest(id_, sign_hex)
+
+                if (action == 'sign'):
+                    self.wc_client.approveRequest(id_, sign_hex)
+                elif (action == 'send'):
+                    # for debug purpose: build signed tx
+                    # https://flightwallet.github.io/decode-eth-tx/
+                    # https://www.ethereumdecoder.com/
+                    # https://antoncoding.github.io/eth-tx-decoder/
+                    tx_signed_obj= Transaction(
+                            nonce= int(nonce, 16),
+                            gas_price=int(gasPrice, 16),
+                            gas= int(gas, 16),
+                            to=b'' if (to is None) else bytes.fromhex(self.normalize(to)),
+                            value= int(value, 16),
+                            data= bytes.fromhex(self.normalize(data)),
+                            v= v+35+2*chainId, #EIP155
+                            r= r,
+                            s= s,
+                    )
+                    tx_signed_bytes= rlp.encode(tx_signed_obj)
+                    tx_signed_hex= "0x"+tx_signed_bytes.hex()
+                    logger.info(f"CALLBACK: onEthSignTransaction - tx_raw_hex= {tx_signed_hex}")
+
+                    # broadcast tx and get tx_hash
+                    tx_signed_hash_hex= self.broadcastTransaction(chainId, tx_signed_hex)
+                    if tx_signed_hash_hex is None:
+                        self.wc_client.rejectRequest(id_)
+                    self.wc_client.approveRequest(id_, tx_signed_hash_hex)
+                else:
+                    # not supported
+                    self.wc_client.rejectRequest(id_)
+
             except Exception as ex:
-                logger.warning(f"CALLBACK: exception in onEthSignTransaction: {ex}")
+                logger.warning(f"CALLBACK: exception in processTransaction: {ex}")
                 self.wc_client.rejectRequest(id_)
         else:
             logger.info(f"CALLBACK Approve signature? NO!")
             self.wc_client.rejectRequest(id_)
 
+    def broadcastTransaction(self, chainId: int, tx_signed_hex: str):
+        logger.debug("in broadcastTransaction")
+        # get apikeys from file
+        self.apikeys={}
+        if getattr( sys, 'frozen', False ):
+            # running in a bundle
+            self.pkg_dir= sys._MEIPASS # for pyinstaller
+        else :
+            # running live
+            self.pkg_dir = path.split(path.realpath(__file__))[0]
+        apikeys_path= path.join(self.pkg_dir, "api_keys.ini")
+        config = ConfigParser()
+        if path.isfile(apikeys_path):
+            config.read(apikeys_path)
+            if config.has_section('APIKEYS'):
+                self.apikeys= config['APIKEYS']
+                #logger.debug('APIKEYS: '+ str(self.apikeys))
+
+        # craft requests
+        import requests
+        if chainId== 0x1: # ethereum
+            apikey= self.apikeys.get('API_KEY_ETHERSCAN','0')
+            url= f"https://api.etherscan.io/api/?module=proxy&action=eth_sendRawTransaction&hex={tx_signed_hex}&apikey={apikey}"
+        elif chainId== 0x3: # ropsten
+            apikey= self.apikeys.get('API_KEY_ETHERSCAN','0')
+            url= f"https://api-ropsten.etherscan.io/api/?module=proxy&action=eth_sendRawTransaction&hex={tx_signed_hex}&apikey={apikey}"
+        elif chainId== 0x38: # bsc
+            apikey= self.apikeys.get('API_KEY_BSCSCAN','0')
+            url= f"https://api.bscscan.com/api/?module=proxy&action=eth_sendRawTransaction&hex={tx_signed_hex}&apikey={apikey}"
+        elif chainId== 0x61: # bsc-test
+            apikey= self.apikeys.get('API_KEY_BSCSCAN','0')
+            url= f"https://api-testnet.bscscan.com/api/?module=proxy&action=eth_sendRawTransaction&hex={tx_signed_hex}&apikey={apikey}"
+        else:
+            logger.debug(f"in broadcastTransaction: unsupported chainId: {chainId}")
+            return None
+
+        # send requests and parse do_challenge_response
+        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36'}
+        response = requests.get(url, headers=headers)
+        try:
+            outputs = response.json()
+            logger.debug(f"in broadcastTransaction: result: {outputs}")
+            tx_signed_hash_hex= outputs['result'] # in str format
+            return tx_signed_hash_hex
+        except (ValueError, KeyError):
+            logger.warning(f"in broadcastTransaction: unable to decode JSON from result: {response.text}")
+            return None
+        return None
+
+    def onEthSignTransaction(self, id_, param: WCEthereumTransaction):
+        logger.info("CALLBACK: onEthSignTransaction")
+        self.processTransaction(id_, param, action='sign')
+
     def onEthSendTransaction(self, id_, param: WCEthereumTransaction):
         logger.info(f"CALLBACK: onEthSendTransaction id={id_} - param={param}")
-        self.wc_client.rejectRequest(id_) # currently unsupported
-
+        self.processTransaction(id_, param, action='send')
 
     def onEthSwitchChain(self, id_, param: WCEthereumSwitchChain):
         logger.info("CALLBACK: onEthSwitchChain")
