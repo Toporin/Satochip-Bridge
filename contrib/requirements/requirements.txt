@@ -1,5 +1,5 @@
 PyQRCode==1.2.1
-pypng==0.0.20 
+pypng==0.0.20
 mnemonic==0.19
 pyperclip==1.7.0
 ecdsa==0.15
@@ -9,8 +9,10 @@ pysatochip==0.12.3
 cryptography==3.3.2
 rlp==2.0.1
 certifi
+py-eth-sig-utils # for eip712 signatures
+json
 
 # GUI
 PySimpleGUIQt==0.31.0
-PySide2==5.12.6 #5.14.2 # <= 5.15.0 
+PySide2==5.12.6 #5.14.2 # <= 5.15.0
 pillow == 8.4.0

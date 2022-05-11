@@ -2,6 +2,7 @@ import logging
 import os
 import rlp
 import sys
+import json
 from os import path
 from configparser import ConfigParser
 from rlp.sedes import BigEndianInt, big_endian_int, Binary, binary, CountableList
@@ -12,6 +13,8 @@ from ecdsa.curves import SECP256k1
 from eth_hash.auto import keccak
 from pykson import Pykson
 from datetime import datetime
+from py_eth_sig_utils import eip712
+from py_eth_sig_utils import utils as eip712_utils
 
 from pywalletconnectv1.wc_client import WCClient
 from pywalletconnectv1.wc_session_store_item import WCSessionStoreItem
@@ -118,29 +121,51 @@ class WCCallback:
         raw= wc_ethereum_sign_message.raw
         wc_sign_type= wc_ethereum_sign_message.type_
         logger.info(f"CALLBACK: onEthSign - wc_sign_type= {wc_sign_type}")
-        if wc_sign_type=="MESSAGE": # also called 'standard'
-            address= raw[0]
-            msg_raw= raw[1]
+        if wc_sign_type=="MESSAGE" or wc_sign_type=="PERSONAL_MESSAGE":
+            if wc_sign_type=="MESSAGE": # also called 'standard'
+                address= raw[0]
+                msg_raw= raw[1]
+            elif  wc_sign_type=="PERSONAL_MESSAGE":
+                address= raw[1]
+                msg_raw= raw[0] # yes, it's in the other order...
             msg_bytes= bytes.fromhex(msg_raw.strip("0x").strip("0X"))
-        elif  wc_sign_type=="PERSONAL_MESSAGE":
-            address= raw[1]
-            msg_raw= raw[0] # yes, it's in the other order...
-            msg_bytes= bytes.fromhex(msg_raw.strip("0x").strip("0X")) #TODO
+            msg_hash= self.msgtohash(msg_bytes)
+            try:
+                msg_txt= msg_bytes.decode('utf-8')
+            except Exception as ex:
+                msg_txt= str(msg_bytes)
         elif wc_sign_type=="TYPED_MESSAGE":
-            #TODO!
             # https://eips.ethereum.org/EIPS/eip-712
             # https://github.com/MetaMask/eth-sig-util/commit/97caab50a98262b0ad01b21e1d0a52091b1bae5e
             address= raw[0]
             msg_raw= raw[1]
-            msg_bytes= msg_raw.encode("utf-8") # not the correct specification!!
-        # text decoding
-        try:
-            msg_txt= msg_bytes.decode('utf-8')
-        except Exception as ex:
-            msg_txt= str(msg_bytes)
-        logger.info(f"CALLBACK: onEthSign - MESSAGE= {msg_txt}")
+            msg_txt= msg_raw
+            try:
+                json_data= json.loads(msg_raw)
+                # check if domainSeparatorHex, hashStructMessageHex are present...
+                if "typedData" in json_data:
+                    typed_data= json_data["typedData"]
+                else:
+                    typed_data= json_data
+                try:
+                    logger.warning(f"CALLBACK: in onEthSign typed_data= {typed_data}")
+                    msg_hash= eip712.encoding.encode_typed_data(typed_data)
+                except Exception as ex:
+                    logger.warning(f"CALLBACK: exception in onEthSign while parsing typedData: {ex}")
+                    domainSeparatorHex= json_data["domainSeparatorHex"]
+                    hashStructMessageHex= json_data["hashStructMessageHex"]
+                    msg_hash= eip712_utils.sha3(bytes.fromhex('19') +
+                                                bytes.fromhex('01') +
+                                                bytes.fromhex(domainSeparatorHex) +
+                                                bytes.fromhex(hashStructMessageHex))
+                    msg_txt= f"WARNING: could not parse typed_data (error: {ex}). \n\nBlind signing using msg_hash: {msg_hash.hex()}"
+                    logger.warning(f"CALLBACK: blind signing using msg_hash: {msg_hash.hex()}")
+            except Exception as ex:
+                logger.warning(f"CALLBACK: exception in onEthSign while parsing typedData: {ex}")
+                self.wc_client.rejectRequest(id_)
+
         logger.info(f"CALLBACK: onEthSign - msg_raw= {msg_raw}")
-        msg_hash= self.msgtohash(msg_bytes)
+        logger.info(f"CALLBACK: onEthSign - MESSAGE= {msg_txt}")
         logger.info(f"CALLBACK: onEthSign - msg_hash= {msg_hash.hex()}")
 
         # check that from equals self.wc_address
