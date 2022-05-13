@@ -83,7 +83,7 @@ class WCCallback:
             # url = remote_peer_meta.url
             # description = remote_peer_meta.description
             # icons = remote_peer_meta.icons
-            if (name== "WalletConnect for Metamask"):
+            if False: #(name== "WalletConnect for Metamask"): # DEBUG
                 # TODO: check url? + description?
                 parent_pubkey= self.bip32_parent['pubkey']
                 parent_chaincode= self.bip32_parent['chaincode']
