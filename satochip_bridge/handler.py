@@ -399,7 +399,7 @@ class HandlerSimpleGUI:
         layout = [
             #[sg.Button("Get QR code from screenshot", key='take_screenshot')],
             [sg.Text("Enter the WalletConnect URL below: "), sg.Button("Scan QR code", key='take_screenshot')],
-            [sg.Multiline(key='wc_url', size=(40, 5))],
+            [sg.Multiline(key='wc_url', size=(50, 5))],
             [sg.Text("Select the chainId: ", size=(20, 1)),
                 sg.InputCombo(CHAINID_LIST, key='chain_id', size=(20, 1)),
                 sg.Text("",size=(5, 1))],
@@ -407,7 +407,7 @@ class HandlerSimpleGUI:
                 sg.InputCombo(BIP32_PATH_LIST, key='bip32_path', size=(20, 1), enable_events=True),
                 sg.InputText(default_text = "0", key='bip32_index', size=(5, 1), enable_events=True) ],
             [sg.Text("Corresponding address: ", size=(20, 1)), sg.Text(address, key='bip32_address')],
-            [sg.Text(size=(40,1), key='-OUTPUT-')],
+            [sg.Text(size=(40,1), key='-OUTPUT-', text_color= 'red')],
             [sg.Submit(), sg.Cancel()],
         ]
 
@@ -448,6 +448,7 @@ class HandlerSimpleGUI:
                     address= self.wc_callback.pubkey_to_ethereum_address(pubkey.get_public_key_bytes(compressed=False))
                     # show
                     window['bip32_address'].update(address)
+                    window['-OUTPUT-'].update('') # clear any previous error
                 except Exception as ex:
                     window['-OUTPUT-'].update(str(ex))
                     continue
