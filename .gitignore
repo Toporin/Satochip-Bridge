@@ -1,5 +1,6 @@
 satochip_bridge/__pycache__/
 satochip_bridge/satochip_bridge.ini
+satochip_bridge/api_keys.ini
 .venv/
 dist/
 contrib/build-linux/appimage/build/
