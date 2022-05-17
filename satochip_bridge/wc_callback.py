@@ -53,17 +53,8 @@ class WCCallback:
         self.wc_session= wc_session
         self.wc_chain_id= chain_id
         self.bip32_child= bip32_child
-        # self.bip32_parent= bip32_parent
-        #if bip32_child is not None:
-            # self.for_metamask= False
         self.wc_bip32_path= bip32_child["bip32_path"]
         self.wc_address= bip32_child["address"]
-        # if bip32_parent is not None:
-        #     # when used for Metamask, the address and child bip32_path is defined on the Metmamask side during pairing
-        #     self.for_metamask= True
-        #     self.wc_bip32_path= None #bip32_parent["bip32_path"]
-        #     self.wc_address= None
-        # TODO: if both parent and child are None, we have an issue
         # set wc objects
         self.wc_client= WCClient()
         self.wc_client.set_callback(self)
@@ -79,18 +70,6 @@ class WCCallback:
             logger.info("WalletConnection to Satochip approved!")
 
             name = remote_peer_meta.name
-            # url = remote_peer_meta.url
-            # description = remote_peer_meta.description
-            # icons = remote_peer_meta.icons
-            # if False: #(name== "WalletConnect for Metamask"): # DEBUG
-            #     # TODO: check url? + description?
-            #     parent_pubkey= self.bip32_parent['pubkey']
-            #     parent_chaincode= self.bip32_parent['chaincode']
-            #     #child_pubkey= self.bip32_child['pubkey']
-            #     bip32_path= self.bip32_parent['bip32_path']
-            #     logger.info("accounts= " + str([parent_pubkey, parent_chaincode, bip32_path]))
-            #     self.wc_client.approveSession([parent_pubkey, parent_chaincode, bip32_path], self.wc_chain_id)
-            # else:
             self.wc_address= self.bip32_child['address']
             self.wc_client.approveSession([self.wc_address], self.wc_chain_id)
             self.wc_remote_peer_meta= remote_peer_meta
@@ -193,11 +172,6 @@ class WCCallback:
         if is_approved:
             logger.info(f"CALLBACK Approve signature? YES!")
             try:
-                # for Metamask, must recover bip32_path from address
-                # if (self.for_metamask):
-                #     bip32_path= self.get_path_from_address(address)
-                # else:
-                #     bip32_path= self.wc_bip32_path
                 # derive key
                 logger.debug(f"Derivation path= {self.wc_bip32_path}")
                 (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
@@ -338,11 +312,6 @@ class WCCallback:
         if is_approved:
             logger.info(f"CALLBACK Approve tx signature? YES!")
             try:
-                # for Metamask, must recover bip32_path from address
-                # if (self.for_metamask):
-                #     bip32_path= self.get_path_from_address(from_)
-                # else:
-                #     bip32_path= self.wc_bip32_path
                 # derive key
                 (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
                 logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())

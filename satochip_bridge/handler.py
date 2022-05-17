@@ -387,7 +387,6 @@ class HandlerSimpleGUI:
     def wallet_connect_create_new_session(self):
         logger.debug('In wallet_connect_create_new_session')
         BIP32_PATH_LIST= ["m/44'/60'/0'/0/", "m/44'/1'/0'/0/", "m/"]
-        # BIP32_PATH_DEFAULT= BIP32_PATH_LIST[0]
         CHAINID_LIST= ["0x1 - Ethereum", "0x3 - Ropsten", "0x38 - Binance Smart Chain"]
         # default address
         try:
@@ -397,16 +396,6 @@ class HandlerSimpleGUI:
         except Exception as ex:
             logger.debug(f"Exception {ex}")
             address="(unknown)"
-        # layout
-        # if for_metamask:
-        #     layout = [
-        #         [sg.Text("Enter the Metamask URL below: "), sg.Button("Scan QR code", key='take_screenshot')],
-        #         [sg.Multiline(key='wc_url', size=(40, 5))],
-        #         [sg.Text("Default bip32 path for Metamask: " + BIP32_PATH_DEFAULT, size=(40, 1)) ],
-        #         [sg.Text(size=(40,1), key='-OUTPUT-')],
-        #         [sg.Submit(), sg.Cancel()],
-        #     ]
-        # else:
         layout = [
             #[sg.Button("Get QR code from screenshot", key='take_screenshot')],
             [sg.Text("Enter the WalletConnect URL below: "), sg.Button("Scan QR code", key='take_screenshot')],
@@ -466,18 +455,6 @@ class HandlerSimpleGUI:
             elif event == 'Submit':
                 # check bip32 path
                 try:
-                    # if for_metamask:
-                    #     # get parent pubkey & chaincode
-                    #     parent_bip32_path= BIP32_PATH_DEFAULT
-                    #     (parent_pubkey, parent_chaincode_bytes)= self.client.cc.card_bip32_get_extendedkey(parent_bip32_path)
-                    #     parent_pubkey_bytes= parent_pubkey.get_public_key_bytes(compressed=True) # for bip32 derivation we need compressed key
-                    #     parent_pubkey_hex= parent_pubkey_bytes.hex()
-                    #     parent_chaincode_hex= parent_chaincode_bytes.hex()
-                    #     bip32_parent= {'bip32_path':parent_bip32_path, 'pubkey':parent_pubkey_hex, 'chaincode':parent_chaincode_hex}
-                    #     values['bip32_parent']= bip32_parent
-                    #     values['bip32_child']= None
-                    #     values["chain_id"]= 0x1 # default
-                    # else:
                     bip32_path= values["bip32_path"] + values["bip32_index"]
                     check= re.match("^(m/)?(\d+'?/)*\d+'?$", bip32_path); # https://stackoverflow.com/questions/61554569/bip32-derivepath-different-privatekey-in-nodejs-and-dartflutter-same-mnemonic
                     if check is None:
@@ -490,8 +467,6 @@ class HandlerSimpleGUI:
                     address= self.wc_callback.pubkey_to_ethereum_address(pubkey_bytes)
                     bip32_child= {'bip32_path':bip32_path, 'pubkey':pubkey_hex, 'chaincode':chaincode_hex, 'address':address}
                     values['bip32_child']= bip32_child
-                    #values['bip32_parent']= None
-                    #values["bip32_path"]= values["bip32_path"] + values["bip32_index"]
                     values["chain_id"]= int(values["chain_id"].split(" - ")[0], 16) # convert hex to int
                 except ValueError as ex:
                     window['-OUTPUT-'].update(str(ex))
@@ -946,13 +921,11 @@ class HandlerSimpleGUI:
                         continue
 
                 # create new session
-                # for_metamask= True if (menu_item== 'Connect to Metamask') else False
                 event_create, values_create = self.wallet_connect_create_new_session()
                 if (event_create=='Submit'):
                     wc_session= values_create['wc_session']
                     chain_id= values_create['chain_id']
                     bip32_child= values_create['bip32_child'] # for walletconnect, the address is chosen by user on the bridge
-                    # bip32_parent= values_create['bip32_parent'] # for Metamask, we provide parent chaincode and pubkey, the actual address is chosen by user on Metamask
                     self.wc_callback.wallet_connect_initiate_session(wc_session, chain_id, bip32_child) # todo: create callback in satochipBridge and add ref in handler directly?
                 else:
                     continue
