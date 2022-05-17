@@ -149,9 +149,12 @@ class WCCallback:
         logger.info(f"CALLBACK: onEthSign - msg_hash= {msg_hash.hex()}")
 
         # check that from equals self.wc_address
-        msg_address= address
         if address != self.wc_address:
-            msg_address=f"WARNING: request ({address}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this request!"
+            self.wc_client.rejectRequest(id_)
+            msg_error=f"Error: the request address ({address}) does not correspond to the address managed by WalletConnect ({self.wc_address}). \nThe request has been rejected! \n\nRequest: \n{msg_txt}"
+            logger.warning(f"CALLBACK: error in onEthSign: {msg_error}")
+            self.sato_client.request('show_error', msg_error)
+            return
 
         is_approved= False
         hmac= None
@@ -165,7 +168,7 @@ class WCCallback:
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
         else:
             # request user approval via GUI
-            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", msg_address, msg_txt)
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, hex(self.wc_chain_id), msg_txt)
             if event== 'Yes':
                 is_approved= True
 
@@ -284,8 +287,12 @@ class WCCallback:
 
         # check that from equals self.wc_address
         if from_ != self.wc_address:
-            tx_txt+=f"\nWARNING: transaction 'From' value ({from_}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this transaction!"
-
+            self.wc_client.rejectRequest(id_)
+            msg_error=f"Error: the request address ({from_}) does not correspond to the address managed by WalletConnect ({self.wc_address}). \nThe request has been rejected! \n\nRequest: \n{tx_txt}"
+            logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
+            self.sato_client.request('show_error', msg_error)
+            return
+            
         logger.info(f"CALLBACK: processTransaction - tx_bytes= {tx_bytes.hex()}")
         tx_hash= keccak(tx_bytes)
         logger.info(f"CALLBACK: processTransaction - tx_hash= {tx_hash.hex()}")
@@ -305,7 +312,7 @@ class WCCallback:
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
         else:
             # request user approval via GUI
-            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", from_, tx_txt)
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", from_, hex(chainId), tx_txt)
             if event== 'Yes':
                 is_approved= True
 
@@ -430,7 +437,7 @@ class WCCallback:
             new_chain_id= int(param.chainId, 16)
             old_chain_id= self.wc_chain_id
             msg= f"Dapp requests to switch from {hex(old_chain_id)} to {hex(new_chain_id)}" # todo: display readable name
-            (event, values)= self.sato_client.request('wallet_connect_approve_action', "switch chain", self.wc_address, msg)
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "switch chain", self.wc_address, hex(self.wc_chain_id), msg)
             if event== 'Yes':
                 self.wc_chain_id= new_chain_id
                 self.wc_client.chainId= new_chain_id

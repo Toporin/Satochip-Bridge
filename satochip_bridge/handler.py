@@ -535,12 +535,13 @@ class HandlerSimpleGUI:
         del window
         return (event, values)
 
-    def wallet_connect_approve_action(self, action, address, data):
+    def wallet_connect_approve_action(self, action, address, chain_id, data):
         logger.debug('In wallet_connect_approve_action')
         layout = [
             [sg.Text("An app wants to perform the following on your Satochip via WalletConnect:")],
             [sg.Text(f"Action: {action}")],
             [sg.Text(f"Address: {address}")],
+            [sg.Text(f"ChainId: {chain_id}")],
             [sg.Text(f"Details:")],
             [sg.Multiline(data, size=(60,6) )],
             #[sg.Text(f"Approve this action?")],
