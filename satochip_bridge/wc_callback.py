@@ -48,22 +48,21 @@ class WCCallback:
         self.wc_chain_id= 1 # Ropsten Ethereum by default # TODO: supports other chains?
         self.wc_bip32_path="" # default, to be updated
 
-    def wallet_connect_initiate_session(self, wc_session: WCSession, chain_id: int, bip32_child=None, bip32_parent=None):
+    def wallet_connect_initiate_session(self, wc_session: WCSession, chain_id: int, bip32_child):
         logger.info(f"CALLBACK: wallet_connect_initiate_session WCSession={WCSession}")
         self.wc_session= wc_session
-        #self.wc_bip32_path= bip32_path
         self.wc_chain_id= chain_id
         self.bip32_child= bip32_child
-        self.bip32_parent= bip32_parent
-        if bip32_child is not None:
-            self.for_metamask= False
-            self.wc_bip32_path= bip32_child["bip32_path"]
-            self.wc_address= bip32_child["address"]
-        if bip32_parent is not None:
-            # when used for Metamask, the address and child bip32_path is defined on the Metmamask side during pairing
-            self.for_metamask= True
-            self.wc_bip32_path= None #bip32_parent["bip32_path"]
-            self.wc_address= None
+        # self.bip32_parent= bip32_parent
+        #if bip32_child is not None:
+            # self.for_metamask= False
+        self.wc_bip32_path= bip32_child["bip32_path"]
+        self.wc_address= bip32_child["address"]
+        # if bip32_parent is not None:
+        #     # when used for Metamask, the address and child bip32_path is defined on the Metmamask side during pairing
+        #     self.for_metamask= True
+        #     self.wc_bip32_path= None #bip32_parent["bip32_path"]
+        #     self.wc_address= None
         # TODO: if both parent and child are None, we have an issue
         # set wc objects
         self.wc_client= WCClient()
@@ -83,17 +82,17 @@ class WCCallback:
             # url = remote_peer_meta.url
             # description = remote_peer_meta.description
             # icons = remote_peer_meta.icons
-            if False: #(name== "WalletConnect for Metamask"): # DEBUG
-                # TODO: check url? + description?
-                parent_pubkey= self.bip32_parent['pubkey']
-                parent_chaincode= self.bip32_parent['chaincode']
-                #child_pubkey= self.bip32_child['pubkey']
-                bip32_path= self.bip32_parent['bip32_path']
-                logger.info("accounts= " + str([parent_pubkey, parent_chaincode, bip32_path]))
-                self.wc_client.approveSession([parent_pubkey, parent_chaincode, bip32_path], self.wc_chain_id)
-            else:
-                self.wc_address= self.bip32_child['address']
-                self.wc_client.approveSession([self.wc_address], self.wc_chain_id)
+            # if False: #(name== "WalletConnect for Metamask"): # DEBUG
+            #     # TODO: check url? + description?
+            #     parent_pubkey= self.bip32_parent['pubkey']
+            #     parent_chaincode= self.bip32_parent['chaincode']
+            #     #child_pubkey= self.bip32_child['pubkey']
+            #     bip32_path= self.bip32_parent['bip32_path']
+            #     logger.info("accounts= " + str([parent_pubkey, parent_chaincode, bip32_path]))
+            #     self.wc_client.approveSession([parent_pubkey, parent_chaincode, bip32_path], self.wc_chain_id)
+            # else:
+            self.wc_address= self.bip32_child['address']
+            self.wc_client.approveSession([self.wc_address], self.wc_chain_id)
             self.wc_remote_peer_meta= remote_peer_meta
             self.sato_handler.show_notification("Notification","WalletConnection to Satochip approved by user!")
         else:
@@ -151,6 +150,8 @@ class WCCallback:
                     logger.warning(f"CALLBACK: in onEthSign typed_data= {typed_data}")
                     msg_hash= eip712.encoding.encode_typed_data(typed_data)
                 except Exception as ex:
+                    # fallback: use domainSeparatorHex & hashStructMessageHex hashes for blind Signing
+                    # This is NOT compliant with walletconnect specifications...
                     logger.warning(f"CALLBACK: exception in onEthSign while parsing typedData: {ex}")
                     domainSeparatorHex= json_data["domainSeparatorHex"]
                     hashStructMessageHex= json_data["hashStructMessageHex"]
@@ -170,7 +171,7 @@ class WCCallback:
 
         # check that from equals self.wc_address
         msg_address= address
-        if (self.wc_address is not None) and (address != self.wc_address):
+        if address != self.wc_address:
             msg_address=f"WARNING: request ({address}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this request!"
 
         is_approved= False
@@ -193,13 +194,13 @@ class WCCallback:
             logger.info(f"CALLBACK Approve signature? YES!")
             try:
                 # for Metamask, must recover bip32_path from address
-                if (self.for_metamask):
-                    bip32_path= self.get_path_from_address(address)
-                else:
-                    bip32_path= self.wc_bip32_path
+                # if (self.for_metamask):
+                #     bip32_path= self.get_path_from_address(address)
+                # else:
+                #     bip32_path= self.wc_bip32_path
                 # derive key
-                logger.debug(f"Derivation path= {bip32_path}")
-                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
+                logger.debug(f"Derivation path= {self.wc_bip32_path}")
+                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
                 logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
                 logger.debug(f"Address= {self.pubkey_to_ethereum_address(pubkey.get_public_key_bytes(compressed=False))}")
                 #sign msg hash
@@ -308,7 +309,7 @@ class WCCallback:
             self.wc_client.rejectRequest(id_)
 
         # check that from equals self.wc_address
-        if (self.wc_address is not None) and (from_ != self.wc_address):
+        if from_ != self.wc_address:
             tx_txt+=f"\nWARNING: transaction 'From' value ({from_}) does not correspond to the address managed by your Satochip ({self.wc_address}). In case of doubt, you should reject this transaction!"
 
         logger.info(f"CALLBACK: processTransaction - tx_bytes= {tx_bytes.hex()}")
@@ -338,12 +339,12 @@ class WCCallback:
             logger.info(f"CALLBACK Approve tx signature? YES!")
             try:
                 # for Metamask, must recover bip32_path from address
-                if (self.for_metamask):
-                    bip32_path= self.get_path_from_address(from_)
-                else:
-                    bip32_path= self.wc_bip32_path
+                # if (self.for_metamask):
+                #     bip32_path= self.get_path_from_address(from_)
+                # else:
+                #     bip32_path= self.wc_bip32_path
                 # derive key
-                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(bip32_path)
+                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
                 logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
                 # sign hash
                 keynbr=0xFF
