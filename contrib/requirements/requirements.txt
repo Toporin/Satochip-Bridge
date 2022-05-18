@@ -9,6 +9,8 @@ pysatochip==0.12.3
 cryptography==3.3.2
 rlp==2.0.1
 py-eth-sig-utils==0.4.0 # for eip712 signatures
+eth-hash==0.2.0
+pykson>=0.9.9.8.7
 pywalletconnectv1==0.1.0
 certifi
 
