@@ -8,9 +8,9 @@ pyscard==1.9.9
 pysatochip==0.12.3
 cryptography==3.3.2
 rlp==2.0.1
+py-eth-sig-utils==0.4.0 # for eip712 signatures
+pywalletconnectv1==0.1.0
 certifi
-py-eth-sig-utils # for eip712 signatures
-json
 
 # GUI
 PySimpleGUIQt==0.31.0
