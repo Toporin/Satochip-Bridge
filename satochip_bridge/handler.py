@@ -398,7 +398,8 @@ class HandlerSimpleGUI:
             address="(unknown)"
         layout = [
             #[sg.Button("Get QR code from screenshot", key='take_screenshot')],
-            [sg.Text("Enter the WalletConnect URL below: "), sg.Button("Scan QR code", key='take_screenshot')],
+            #[sg.Text("Enter the WalletConnect URL below: "), sg.Button("Scan QR code", key='take_screenshot')],
+            [sg.Text("Enter the WalletConnect URL below: ")],
             [sg.Multiline(key='wc_url', size=(50, 5))],
             [sg.Text("Select the chainId: ", size=(20, 1)),
                 sg.InputCombo(CHAINID_LIST, key='chain_id', size=(20, 1)),
