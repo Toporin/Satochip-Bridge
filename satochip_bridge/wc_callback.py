@@ -292,7 +292,7 @@ class WCCallback:
             logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
             self.sato_client.request('show_error', msg_error)
             return
-            
+
         logger.info(f"CALLBACK: processTransaction - tx_bytes= {tx_bytes.hex()}")
         tx_hash= keccak(tx_bytes)
         logger.info(f"CALLBACK: processTransaction - tx_hash= {tx_hash.hex()}")
