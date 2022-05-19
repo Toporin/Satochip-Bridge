@@ -3,6 +3,8 @@ satochip_bridge/satochip_bridge.ini
 satochip_bridge/api_keys.ini
 .venv/
 dist/
+build/
+*.egg-info/
 contrib/build-linux/appimage/build/
 contrib/build-linux/appimage/.cache/
 contrib/build-wine/.cache/
