@@ -21,6 +21,11 @@ PYSCARD_FILENAME=pyscard-1.9.9-cp36-cp36m-win32.whl  # python 3.6, 32-bit
 PYSCARD_URL=https://github.com/cculianu/Electron-Cash-Build-Tools/releases/download/v1.0/pyscard-1.9.9-cp36-cp36m-win32.whl
 PYSCARD_SHA256=99d2b450f322f9ed9682fd2a99d95ce781527e371006cded38327efca8158fe7
 
+# cytoolz (for eth-utils)
+CYTOOLZ_FILENAME=cytoolz-0.11.0-cp36-cp36m-win32.whl
+CYTOOLZ_URL=https://github.com/Toporin/binaries/raw/main/cytoolz-0.11.0-cp36-cp36m-win32.whl
+CYTOOLZ_SHA256=62609c2a414fc868dcbbab770512dffc420441107a3e072ad8317443172c390a
+
 
 PYTHON_VERSION=3.6.8
 
@@ -61,6 +66,10 @@ for msifile in core dev exe lib pip tools; do
     wine msiexec /i "$PYTHON_DOWNLOADS/${msifile}.msi" /qb TARGETDIR=$PYHOME
 done
 
+info "DEBUG update pip and setuptools"
+$PYTHON -m pip install --upgrade pip
+$PYTHON -m pip install --upgrade setuptools
+
 info "Installing dependencies specific to binaries."
 # note that this also installs pinned versions of both pip and setuptools
 #$PYTHON -m pip install --no-warn-script-location -r "$CONTRIB"/deterministic-build/requirements-binaries.txt
@@ -70,6 +79,11 @@ info "Installing pyscard..."
 download_if_not_exist $PYSCARD_FILENAME "$PYSCARD_URL"
 verify_hash $PYSCARD_FILENAME "$PYSCARD_SHA256"
 $PYTHON -m pip install "$CACHEDIR/$PYSCARD_FILENAME"
+
+info "Installing cytoolz..."
+download_if_not_exist $CYTOOLZ_FILENAME "$CYTOOLZ_URL"
+verify_hash $CYTOOLZ_FILENAME "$CYTOOLZ_SHA256"
+$PYTHON -m pip install "$CACHEDIR/$CYTOOLZ_FILENAME"
 
 # info "Installing NSIS."
 # download_if_not_exist "$CACHEDIR/$NSIS_FILENAME" "$NSIS_URL"
