@@ -141,8 +141,11 @@ class WCCallback:
                     msg_txt= f"WARNING: could not parse typed_data (error: {ex}). \n\nBlind signing using msg_hash: {msg_hash.hex()}"
                     logger.warning(f"CALLBACK: blind signing using msg_hash: {msg_hash.hex()}")
             except Exception as ex:
-                logger.warning(f"CALLBACK: exception in onEthSign while parsing typedData: {ex}")
                 self.wc_client.rejectRequest(id_)
+                msg_error= f"Request to sign typed message rejected! \n\nFailed to parse typedData with error: {ex}"
+                logger.warning(f"CALLBACK: exception in onEthSign: {msg_error}")
+                self.sato_handler.show_error(msg_error)
+                return
 
         logger.info(f"CALLBACK: onEthSign - msg_raw= {msg_raw}")
         logger.info(f"CALLBACK: onEthSign - MESSAGE= {msg_txt}")
@@ -153,7 +156,7 @@ class WCCallback:
             self.wc_client.rejectRequest(id_)
             msg_error=f"Error: the request address ({address}) does not correspond to the address managed by WalletConnect ({self.wc_address}). \nThe request has been rejected! \n\nRequest: \n{msg_txt}"
             logger.warning(f"CALLBACK: error in onEthSign: {msg_error}")
-            self.sato_client.request('show_error', msg_error)
+            self.sato_handler.show_error(msg_error)
             return
 
         is_approved= False
@@ -194,12 +197,16 @@ class WCCallback:
                 logger.info(f"CALLBACK: onEthSign - sigstring= {sigstring.hex()}")
                 sign_hex= "0x"+sigstring.hex()
                 self.wc_client.approveRequest(id_, sign_hex)
+                self.sato_handler.show_notification("Notification","Message signature request approved by user")
             except Exception as ex:
-                logger.warning(f"CALLBACK: exception in onEthSign: {ex}")
                 self.wc_client.rejectRequest(id_)
+                msg_error= f"Failed to sign message! \n\nError: {ex}"
+                logger.warning(f"CALLBACK: exception in onEthSign: {msg_error}")
+                self.sato_handler.show_error(msg_error)
         else:
-            logger.info(f"CALLBACK Approve signature? NO!")
             self.wc_client.rejectRequest(id_)
+            logger.info(f"CALLBACK Approve signature? NO!")
+            self.sato_handler.show_notification("Notification","Message signature request rejected by user")
 
     # todo: apply to every input
     def normalize(self, ins):
@@ -228,8 +235,11 @@ class WCCallback:
         elif (param.gasLimit is not None):
             gas= param.gasLimit
         else:
-            logger.warning(f"CALLBACK: exception in processTransaction: no gas value present")
             self.wc_client.rejectRequest(id_)
+            msg_error= f"Transaction request rejected! \n\nNo gas value present"
+            logger.warning(f"CALLBACK: exception in processTransaction: no gas value present")
+            self.sato_handler.show_error(msg_error)
+            return
         if (param.chainId is not None):
             chainId= param.chainId
         else: # default
@@ -259,8 +269,11 @@ class WCCallback:
             logger.info(f"param.accessList= {param.accessList}")
             tx_txt= f"EIP2930 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
             tx_bytes= [] # TODO!
-            logger.warning(f"CALLBACK: exception in processTransaction: unsupported transaction type: {type_}")
             self.wc_client.rejectRequest(id_)
+            msg_error= f"Transaction request rejected! Error: unsupported transaction type: {type_}"
+            logger.warning(f"CALLBACK: {msg_error}")
+            self.sato_handler.show_error(msg_error)
+            return
 
         elif type_==2: # eip1559
             maxPriorityFeePerGas= param.maxPriorityFeePerGas
@@ -282,15 +295,18 @@ class WCCallback:
             tx_bytes= bytes([2]) + rlp.encode(tx_obj)
 
         else:
-            logger.warning(f"CALLBACK: exception in processTransaction: unsupported transaction type: {type_}")
             self.wc_client.rejectRequest(id_)
+            msg_error= f"Transaction request rejected! Error: unsupported transaction type: {type_}"
+            logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
+            self.sato_handler.show_error(msg_error)
+            return
 
         # check that from equals self.wc_address
         if from_ != self.wc_address:
             self.wc_client.rejectRequest(id_)
             msg_error=f"Error: the request address ({from_}) does not correspond to the address managed by WalletConnect ({self.wc_address}). \nThe request has been rejected! \n\nRequest: \n{tx_txt}"
             logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
-            self.sato_client.request('show_error', msg_error)
+            self.sato_handler.show_error(msg_error)
             return
 
         logger.info(f"CALLBACK: processTransaction - tx_bytes= {tx_bytes.hex()}")
@@ -338,6 +354,7 @@ class WCCallback:
 
                 if (action == 'sign'):
                     self.wc_client.approveRequest(id_, sign_hex)
+                    self.sato_handler.show_notification("Notification","Sign transaction request approved by user")
                 elif (action == 'send'):
                     # for debug purpose: build signed tx
                     # https://flightwallet.github.io/decode-eth-tx/
@@ -361,18 +378,26 @@ class WCCallback:
                     # broadcast tx and get tx_hash
                     tx_signed_hash_hex= self.broadcastTransaction(chainId, tx_signed_hex)
                     if tx_signed_hash_hex is None:
+                        # TODO: show tx in error msg
                         self.wc_client.rejectRequest(id_)
+                        msg_error=f"Failed to broadcast signed transaction! \n\nSigned tx:{tx_signed_hex}"
+                        logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
+                        self.sato_handler.show_error(msg_error)
+                        return
                     self.wc_client.approveRequest(id_, tx_signed_hash_hex)
+                    self.sato_handler.show_notification("Notification","Broadcast transaction request approved by user")
                 else:
-                    # not supported
+                    # should not happen!
                     self.wc_client.rejectRequest(id_)
 
             except Exception as ex:
-                logger.warning(f"CALLBACK: exception in processTransaction: {ex}")
                 self.wc_client.rejectRequest(id_)
+                logger.warning(f"CALLBACK: exception in processTransaction: {ex}")
+                self.sato_handler.show_error(f'Failed to approve transaction! \n\nError:{ex}')
         else:
             logger.info(f"CALLBACK Approve signature? NO!")
             self.wc_client.rejectRequest(id_)
+            self.sato_handler.show_notification("Notification","Transaction request rejected by user")
 
     def broadcastTransaction(self, chainId: int, tx_signed_hex: str):
         logger.debug("in broadcastTransaction")
@@ -411,6 +436,7 @@ class WCCallback:
             return None
 
         # send requests and parse do_challenge_response
+        logger.debug(f"in broadcastTransaction: url: {url}")
         headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36'}
         response = requests.get(url, headers=headers)
         try:
@@ -442,11 +468,15 @@ class WCCallback:
                 self.wc_chain_id= new_chain_id
                 self.wc_client.chainId= new_chain_id
                 self.wc_client.approveRequest(id_, None) # https://docs.metamask.io/guide/rpc-api.html#wallet-switchethereumchain
+                self.sato_handler.show_notification("Notification","Switch chain request approved by user")
             else:
                 self.wc_client.rejectRequest(id_)
+                self.sato_handler.show_notification("Notification","Switch chain request rejected by user")
         except Exception as ex:
-            logger.warning(f"CALLBACK: exception in onEthSwitchChain: {ex}")
             self.wc_client.rejectRequest(id_)
+            msg_error=f"Failed to switch chain! \n\nError:{ex}"
+            logger.warning(f"CALLBACK: error in onEthSwitchChain: {msg_error}")
+            self.sato_handler.show_error(msg_error)
 
     def onCustomRequest(self, id_, param):
         logger.info(f"CALLBACK: onCustomRequest id={id_} - param={param}")
