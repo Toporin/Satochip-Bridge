@@ -24,54 +24,54 @@ from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCO
 
 try:
     from version import SATOCHIP_BRIDGE_VERSION
+    from wc_callback import WCCallback, BIP32_PATH_LIST, NETWORK_DICT, CHAINID_DICT
 except Exception as e:
     print('ImportError: '+repr(e))
     from satochip_bridge.version import SATOCHIP_BRIDGE_VERSION
-
-# WalletConnect
-try:
-    from wc_callback import WCCallback
-except Exception as e:
-    print('ImportError: '+repr(e))
-    from satochip_bridge.wc_callback import WCCallback
+    from satochip_bridge.wc_callback import WCCallback, BIP32_PATH_LIST, NETWORK_DICT, CHAINID_DICT
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-class HandlerTxt:
-    def __init__(self):
-        pass
+# BIP32_PATH_LIST= ["m/44'/60'/0'/0/", "m/44'/1'/0'/0/", "m/"]
+# CHAINID_LIST= ["0x1 - Ethereum", "0x3 - Ropsten", "0x38 - Binance Smart Chain"]
+# NETWORK_DICT= {0x1:"Ethereum", 0x3:"Ropsten", 0x38:"Binance Smart Chain"}
 
-    def update_status(self, isConnected):
-        if (isConnected):
-            print("Card connected!")
-        else:
-            print("Card disconnected!")
 
-    def show_error(self,msg):
-        print(msg)
-
-    def show_success(self, msg):
-        print(msg)
-
-    def show_message(self, msg):
-        print(msg)
-
-    def yes_no_question(self, question):
-        while "the answer is invalid":
-            reply = str(input(question+' (y/n): ')).lower().strip()
-            if reply[0] == 'y':
-                return True
-            if reply[0] == 'n':
-                return False
-
-    def get_passphrase(self, msg):
-        is_PIN=True
-        pin = getpass.getpass(msg) #getpass returns a string
-        return (is_PIN, pin)
-
-    def QRDialog(self, data, parent=None, title = '', show_text=False, msg= ''):
-        print(msg)
+# class HandlerTxt:
+#     def __init__(self):
+#         pass
+#
+#     def update_status(self, isConnected):
+#         if (isConnected):
+#             print("Card connected!")
+#         else:
+#             print("Card disconnected!")
+#
+#     def show_error(self,msg):
+#         print(msg)
+#
+#     def show_success(self, msg):
+#         print(msg)
+#
+#     def show_message(self, msg):
+#         print(msg)
+#
+#     def yes_no_question(self, question):
+#         while "the answer is invalid":
+#             reply = str(input(question+' (y/n): ')).lower().strip()
+#             if reply[0] == 'y':
+#                 return True
+#             if reply[0] == 'n':
+#                 return False
+#
+#     def get_passphrase(self, msg):
+#         is_PIN=True
+#         pin = getpass.getpass(msg) #getpass returns a string
+#         return (is_PIN, pin)
+#
+#     def QRDialog(self, data, parent=None, title = '', show_text=False, msg= ''):
+#         print(msg)
 
 class HandlerSimpleGUI:
     def __init__(self, loglevel= logging.WARNING):
@@ -386,8 +386,8 @@ class HandlerSimpleGUI:
     ### WalletConnect actions ###
     def wallet_connect_create_new_session(self):
         logger.debug('In wallet_connect_create_new_session')
-        BIP32_PATH_LIST= ["m/44'/60'/0'/0/", "m/44'/1'/0'/0/", "m/"]
-        CHAINID_LIST= ["0x1 - Ethereum", "0x3 - Ropsten", "0x38 - Binance Smart Chain"]
+        #BIP32_PATH_LIST= ["m/44'/60'/0'/0/", "m/44'/1'/0'/0/", "m/"]
+        #CHAINID_LIST= ["0x1 - Ethereum", "0x3 - Ropsten", "0x38 - Binance Smart Chain"]
         # default address
         try:
             bip32_path= BIP32_PATH_LIST[0] + '0'
@@ -401,8 +401,11 @@ class HandlerSimpleGUI:
             #[sg.Text("Enter the WalletConnect URL below: "), sg.Button("Scan QR code", key='take_screenshot')],
             [sg.Text("Enter the WalletConnect URL below: ")],
             [sg.Multiline(key='wc_url', size=(50, 5))],
-            [sg.Text("Select the chainId: ", size=(20, 1)),
-                sg.InputCombo(CHAINID_LIST, key='chain_id', size=(20, 1)),
+            # [sg.Text("Select the chainId: ", size=(20, 1)),
+            #     sg.InputCombo(CHAINID_LIST, key='chain_id', size=(20, 1)),
+            #     sg.Text("",size=(5, 1))],
+            [sg.Text("Select default network: ", size=(20, 1)),
+                sg.InputCombo(list(NETWORK_DICT.values()), key='network', size=(20, 1)),
                 sg.Text("",size=(5, 1))],
             [sg.Text("Select the bip32 path & index: ", size=(20, 1)),
                 sg.InputCombo(BIP32_PATH_LIST, key='bip32_path', size=(20, 1), enable_events=True),
@@ -469,7 +472,10 @@ class HandlerSimpleGUI:
                     address= self.wc_callback.pubkey_to_ethereum_address(pubkey_bytes)
                     bip32_child= {'bip32_path':bip32_path, 'pubkey':pubkey_hex, 'chaincode':chaincode_hex, 'address':address}
                     values['bip32_child']= bip32_child
-                    values["chain_id"]= int(values["chain_id"].split(" - ")[0], 16) # convert hex to int
+                    logger.debug(f'CHAINID_DICT: {CHAINID_DICT}')
+                    logger.debug(f'values["network"]: {values["network"]}')
+                    values["chain_id"]= CHAINID_DICT[values['network']]
+                    #values["chain_id"]= int(values["chain_id"].split(" - ")[0], 16) # convert hex to int
                 except ValueError as ex:
                     window['-OUTPUT-'].update(str(ex))
                     continue
@@ -483,7 +489,6 @@ class HandlerSimpleGUI:
                     window['-OUTPUT-'].update(str(ex))
                     continue
                 break
-        # update bip32_path & chain_id
         window.close()
         del window
         return event, values
@@ -537,6 +542,27 @@ class HandlerSimpleGUI:
         return (event, values)
 
     def wallet_connect_approve_action(self, action, address, chain_id, data):
+
+        initial_network= NETWORK_DICT[chain_id]
+        logger.debug('In wallet_connect_approve_action')
+        layout = [
+            [sg.Text("An app wants to perform the following on your Satochip via WalletConnect:")],
+            [sg.Text(f"Action: {action}")],
+            [sg.Text(f"Address: {address}")],
+            #[sg.Text(f"ChainId: {chain_id}")],
+            [sg.Text(f"Network:"), sg.InputCombo(list(NETWORK_DICT.values()), key='network', size=(20, 1), default_value=initial_network),],
+            [sg.Text(f"Details:")],
+            [sg.Multiline(data, size=(60,6) )],
+            #[sg.Text(f"Approve this action?")],
+            [sg.Button("Approve", key='Yes'), sg.Button("Reject", key='No')],
+        ]
+        window = sg.Window('WalletConnect: confirmation required', layout, icon=self.satochip_icon)  #ok
+        event, values = window.read()
+        window.close()
+        del window
+        return (event, values)
+
+    def wallet_connect_approve_action_old(self, action, address, chain_id, data):
         logger.debug('In wallet_connect_approve_action')
         layout = [
             [sg.Text("An app wants to perform the following on your Satochip via WalletConnect:")],

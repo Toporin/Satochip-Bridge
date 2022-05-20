@@ -36,6 +36,11 @@ except Exception as e:
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+BIP32_PATH_LIST= ["m/44'/60'/0'/0/", "m/44'/1'/0'/0/", "m/"]
+#CHAINID_LIST= ["0x1 - Ethereum", "0x3 - Ropsten", "0x38 - Binance Smart Chain"]
+NETWORK_DICT= {0x1:"Ethereum", 0x3:"Ropsten", 0x38:"Binance Smart Chain"}
+CHAINID_DICT= {v:k for k, v in NETWORK_DICT.items()}
+
 CURVE_ORDER = SECP256k1.order
 MAX_INDEX = 1000 # should be same as eth-walletconnect-keyring constant
 
@@ -106,7 +111,7 @@ class WCCallback:
             elif  wc_sign_type=="PERSONAL_MESSAGE":
                 address= raw[1]
                 msg_raw= raw[0] # yes, it's in the other order...
-            msg_bytes= bytes.fromhex(msg_raw.strip("0x").strip("0X"))
+            msg_bytes= bytes.fromhex(self.normalize(msg_raw))
             msg_hash= self.msgtohash(msg_bytes)
             try:
                 msg_txt= msg_bytes.decode('utf-8')
@@ -171,9 +176,10 @@ class WCCallback:
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
         else:
             # request user approval via GUI
-            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, hex(self.wc_chain_id), msg_txt)
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, self.wc_chain_id, msg_txt)
             if event== 'Yes':
                 is_approved= True
+                # todo: check selected network/chain_id?
 
         if is_approved:
             logger.info(f"CALLBACK Approve signature? YES!")
@@ -217,9 +223,17 @@ class WCCallback:
             out= ins.replace("0x", "")
             if len(out)%2 == 1:
                 out= "0" + out
-            logger.info("in normalize: " +str(ins) +  " "  + str(out)) # debug tmp
+            #logger.info("in normalize: " +str(ins) +  " "  + str(out)) # debug tmp
             return out
         return ins
+
+    def onEthSignTransaction(self, id_, param: WCEthereumTransaction):
+        logger.info("CALLBACK: onEthSignTransaction")
+        self.processTransaction(id_, param, action='sign')
+
+    def onEthSendTransaction(self, id_, param: WCEthereumTransaction):
+        logger.info(f"CALLBACK: onEthSendTransaction id={id_} - param={param}")
+        self.processTransaction(id_, param, action='send')
 
     def processTransaction(self, id_, param: WCEthereumTransaction, action: str):
         logger.info("CALLBACK: processTransaction")
@@ -245,11 +259,70 @@ class WCCallback:
         else: # default
             chainId= self.wc_chain_id
 
+        # check that from equals self.wc_address
+        if from_ != self.wc_address:
+            self.wc_client.rejectRequest(id_)
+            msg_error=f"Error: the request address ({from_}) does not correspond to the address managed by WalletConnect ({self.wc_address}). \nThe request has been rejected! \n\nRequest: \n{tx_txt}"
+            logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
+            self.sato_handler.show_error(msg_error)
+            return
+
+        # Parse tx for display
         # Legacy, EIP 1559
         type_= param.type_
         if (type_ is None or type_== 0): # legacy
             gasPrice= param.gasPrice
-            tx_txt= f"Legacy transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce} \nChainId: {chainId}"
+            #tx_txt= f"Legacy transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce} \nChainId: {chainId}"
+            tx_txt= f"Legacy transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce}"
+
+        elif type_==1: # eip2930
+            gasPrice= param.gasPrice
+            accessList = param.accessList # TODO
+            logger.info(f"param.accessList= {param.accessList}")
+            #tx_txt= f"EIP2930 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
+            tx_txt= f"EIP2930 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce} \nAccessList: {accessList}"
+            tx_bytes= [] # TODO!
+            self.wc_client.rejectRequest(id_)
+            msg_error= f"Transaction request rejected! Error: unsupported transaction type: {type_}"
+            logger.warning(f"CALLBACK: {msg_error}")
+            self.sato_handler.show_error(msg_error)
+            return
+
+        elif type_==2: # eip1559
+            maxPriorityFeePerGas= param.maxPriorityFeePerGas
+            maxFeePerGas= param.maxFeePerGas
+            accessList= param.accessList # TODO
+            logger.info(f"param.accessList= {param.accessList}")
+            #tx_txt= f"EIP1559 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nMaxFeePerGas: {maxFeePerGas} \nMaxPriorityFeePerGas: {maxPriorityFeePerGas} \nData: {data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
+            tx_txt= f"EIP1559 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nMaxFeePerGas: {maxFeePerGas} \nMaxPriorityFeePerGas: {maxPriorityFeePerGas} \nData: {data} \nNonce: {nonce} \nAccessList: {accessList}"
+
+        else:
+            self.wc_client.rejectRequest(id_)
+            msg_error= f"Transaction request rejected! Error: unsupported transaction type: {type_}"
+            logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
+            self.sato_handler.show_error(msg_error)
+            return
+
+        # request user approval via GUI
+        hmac= None
+        if not self.sato_client.cc.needs_2FA: # skip this part if 2FA is enabled?
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", from_, chainId, tx_txt)
+            if event== 'Yes':
+                # check chainId: if user changed the network, it will be reflected in the tx to sign
+                new_network= values["network"]
+                new_chainId= CHAINID_DICT[new_network]
+                if (new_chainId != chainId):
+                    logger.info(f"CALLBACK changed chainId from {hex(chainId)} to {hex(new_chainId)}")
+                    chainId= new_chainId
+                    # self.wc_chain_id= new_chainId # should we also update self.wc_chain_id?
+            else:
+                logger.info(f"CALLBACK Approve signature? NO!")
+                self.wc_client.rejectRequest(id_)
+                self.sato_handler.show_notification("Notification","Transaction request rejected by user")
+                return
+
+        # compute tx hash
+        if (type_ is None or type_== 0): # legacy
             tx_obj= Transaction( # EIP155
                 nonce= int(nonce, 16),
                 gas_price=int(gasPrice, 16),
@@ -263,24 +336,7 @@ class WCCallback:
             )
             tx_bytes= rlp.encode(tx_obj)
 
-        elif type_==1: # eip2930
-            gasPrice= param.gasPrice
-            accessList = param.accessList # TODO
-            logger.info(f"param.accessList= {param.accessList}")
-            tx_txt= f"EIP2930 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
-            tx_bytes= [] # TODO!
-            self.wc_client.rejectRequest(id_)
-            msg_error= f"Transaction request rejected! Error: unsupported transaction type: {type_}"
-            logger.warning(f"CALLBACK: {msg_error}")
-            self.sato_handler.show_error(msg_error)
-            return
-
         elif type_==2: # eip1559
-            maxPriorityFeePerGas= param.maxPriorityFeePerGas
-            maxFeePerGas= param.maxFeePerGas
-            accessList= param.accessList # TODO
-            logger.info(f"param.accessList= {param.accessList}")
-            tx_txt= f"EIP1559 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nMaxFeePerGas: {maxFeePerGas} \nMaxPriorityFeePerGas: {maxPriorityFeePerGas} \nData: {data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
             tx_obj= TransactionEIP1559(
                 chain_id= chainId,
                 nonce= int(nonce, 16),
@@ -294,28 +350,11 @@ class WCCallback:
             )
             tx_bytes= bytes([2]) + rlp.encode(tx_obj)
 
-        else:
-            self.wc_client.rejectRequest(id_)
-            msg_error= f"Transaction request rejected! Error: unsupported transaction type: {type_}"
-            logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
-            self.sato_handler.show_error(msg_error)
-            return
-
-        # check that from equals self.wc_address
-        if from_ != self.wc_address:
-            self.wc_client.rejectRequest(id_)
-            msg_error=f"Error: the request address ({from_}) does not correspond to the address managed by WalletConnect ({self.wc_address}). \nThe request has been rejected! \n\nRequest: \n{tx_txt}"
-            logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
-            self.sato_handler.show_error(msg_error)
-            return
-
-        logger.info(f"CALLBACK: processTransaction - tx_bytes= {tx_bytes.hex()}")
         tx_hash= keccak(tx_bytes)
+        logger.info(f"CALLBACK: processTransaction - tx_bytes= {tx_bytes.hex()}")
         logger.info(f"CALLBACK: processTransaction - tx_hash= {tx_hash.hex()}")
 
-        # request user approval
-        is_approved= False
-        hmac= None
+        # 2FA approval if enabled
         if self.sato_client.cc.needs_2FA:
             # TODO
             # construct request msg for 2FA
@@ -326,40 +365,40 @@ class WCCallback:
             msg['from']= from_ #self.wc_address TODO
             msg['chainId']= chainId # optionnal, otherwise taken from tx deserialization...
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
-        else:
-            # request user approval via GUI
-            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", from_, hex(chainId), tx_txt)
-            if event== 'Yes':
-                is_approved= True
+            if not is_approved:
+                logger.info(f"CALLBACK Approve signature? NO!")
+                self.wc_client.rejectRequest(id_)
+                self.sato_handler.show_notification("Notification","Transaction request rejected by user via 2FA")
+                return
 
-        if is_approved:
-            logger.info(f"CALLBACK Approve tx signature? YES!")
-            try:
-                # derive key
-                (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
-                logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
-                # sign hash
-                keynbr=0xFF
-                (response, sw1, sw2)= self.sato_client.cc.card_sign_transaction_hash(keynbr, list(tx_hash), hmac)
-                logger.info(f"CALLBACK: processTransaction - response= {response}")
-                # parse sig
-                (r,s,v, sigstring)= self.sato_client.cc.parser.parse_rsv_from_dersig(bytes(response), tx_hash, pubkey)
-                logger.info(f"CALLBACK: processTransaction - r= {r}")
-                logger.info(f"CALLBACK: processTransaction - s= {s}")
-                logger.info(f"CALLBACK: processTransaction - v= {v}")
-                logger.info(f"CALLBACK: processTransaction - sigstring= {sigstring.hex()}")
-                sigstring= sigstring[1:]+sigstring[0:1] # for walletconnect, the v byte is appended AFTER r,s...
-                logger.info(f"CALLBACK: processTransaction - sigstring= {sigstring.hex()}")
-                sign_hex= "0x"+sigstring.hex()
+        # Sign tx
+        try:
+            # derive key
+            (pubkey, chaincode)= self.sato_client.cc.card_bip32_get_extendedkey(self.wc_bip32_path)
+            logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
+            # sign hash
+            keynbr=0xFF
+            (response, sw1, sw2)= self.sato_client.cc.card_sign_transaction_hash(keynbr, list(tx_hash), hmac)
+            logger.info(f"CALLBACK: processTransaction - response= {response}")
+            # parse sig
+            (r,s,v, sigstring)= self.sato_client.cc.parser.parse_rsv_from_dersig(bytes(response), tx_hash, pubkey)
+            logger.info(f"CALLBACK: processTransaction - r= {r}")
+            logger.info(f"CALLBACK: processTransaction - s= {s}")
+            logger.info(f"CALLBACK: processTransaction - v= {v}")
+            logger.info(f"CALLBACK: processTransaction - sigstring= {sigstring.hex()}")
+            sigstring= sigstring[1:]+sigstring[0:1] # for walletconnect, the v byte is appended AFTER r,s...
+            logger.info(f"CALLBACK: processTransaction - sigstring= {sigstring.hex()}")
+            sign_hex= "0x"+sigstring.hex()
 
-                if (action == 'sign'):
-                    self.wc_client.approveRequest(id_, sign_hex)
-                    self.sato_handler.show_notification("Notification","Sign transaction request approved by user")
-                elif (action == 'send'):
-                    # for debug purpose: build signed tx
-                    # https://flightwallet.github.io/decode-eth-tx/
-                    # https://www.ethereumdecoder.com/
-                    # https://antoncoding.github.io/eth-tx-decoder/
+            if (action == 'sign'):
+                self.wc_client.approveRequest(id_, sign_hex)
+                self.sato_handler.show_notification("Notification","Sign transaction request approved by user")
+            elif (action == 'send'):
+                # build signed tx for broadcast:
+                # https://flightwallet.github.io/decode-eth-tx/
+                # https://www.ethereumdecoder.com/
+                # https://antoncoding.github.io/eth-tx-decoder/
+                if (type_ is None or type_== 0): # legacy
                     tx_signed_obj= Transaction(
                             nonce= int(nonce, 16),
                             gas_price=int(gasPrice, 16),
@@ -372,32 +411,45 @@ class WCCallback:
                             s= s,
                     )
                     tx_signed_bytes= rlp.encode(tx_signed_obj)
-                    tx_signed_hex= "0x"+tx_signed_bytes.hex()
-                    logger.info(f"CALLBACK: onEthSignTransaction - tx_raw_hex= {tx_signed_hex}")
+                elif type_==2: # eip1559
+                    tx_signed_obj= TransactionEIP1559Signed(
+                            chain_id= chainId,
+                            nonce= int(nonce, 16),
+                            max_priority_fee_per_gas=int(maxPriorityFeePerGas, 16),
+                            max_fee_per_gas=int(maxFeePerGas, 16),
+                            gas= int(gas, 16),
+                            to= b'' if (to is None) else bytes.fromhex(self.normalize(to)),
+                            value= int(value, 16),
+                            data= bytes.fromhex(self.normalize(data)),
+                            access_list= accessList, # TODO: parse accessList
+                            y_parity= v,
+                            r= r,
+                            s= s,
+                    )
+                    tx_signed_bytes= bytes([2]) + rlp.encode(tx_signed_obj)
 
-                    # broadcast tx and get tx_hash
-                    tx_signed_hash_hex= self.broadcastTransaction(chainId, tx_signed_hex)
-                    if tx_signed_hash_hex is None:
-                        # TODO: show tx in error msg
-                        self.wc_client.rejectRequest(id_)
-                        msg_error=f"Failed to broadcast signed transaction! \n\nSigned tx:{tx_signed_hex}"
-                        logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
-                        self.sato_handler.show_error(msg_error)
-                        return
-                    self.wc_client.approveRequest(id_, tx_signed_hash_hex)
-                    self.sato_handler.show_notification("Notification","Broadcast transaction request approved by user")
-                else:
-                    # should not happen!
+                tx_signed_hex= "0x"+tx_signed_bytes.hex()
+                logger.info(f"CALLBACK: onEthSignTransaction - tx_raw_hex= {tx_signed_hex}")
+
+                # broadcast tx and get tx_hash
+                tx_signed_hash_hex= self.broadcastTransaction(chainId, tx_signed_hex)
+                if tx_signed_hash_hex is None:
+                    # TODO: show tx in error msg
                     self.wc_client.rejectRequest(id_)
-
-            except Exception as ex:
+                    msg_error=f"Failed to broadcast signed transaction! \n\nSigned tx:{tx_signed_hex}"
+                    logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
+                    self.sato_handler.show_error(msg_error)
+                    return
+                self.wc_client.approveRequest(id_, tx_signed_hash_hex)
+                self.sato_handler.show_notification("Notification","Broadcast transaction request approved by user")
+            else:
+                # should not happen!
                 self.wc_client.rejectRequest(id_)
-                logger.warning(f"CALLBACK: exception in processTransaction: {ex}")
-                self.sato_handler.show_error(f'Failed to approve transaction! \n\nError:{ex}')
-        else:
-            logger.info(f"CALLBACK Approve signature? NO!")
+
+        except Exception as ex:
             self.wc_client.rejectRequest(id_)
-            self.sato_handler.show_notification("Notification","Transaction request rejected by user")
+            logger.warning(f"CALLBACK: exception in processTransaction: {ex}")
+            self.sato_handler.show_error(f'Failed to approve transaction! \n\nError:{ex}')
 
     def broadcastTransaction(self, chainId: int, tx_signed_hex: str):
         logger.debug("in broadcastTransaction")
@@ -449,21 +501,14 @@ class WCCallback:
             return None
         return None
 
-    def onEthSignTransaction(self, id_, param: WCEthereumTransaction):
-        logger.info("CALLBACK: onEthSignTransaction")
-        self.processTransaction(id_, param, action='sign')
-
-    def onEthSendTransaction(self, id_, param: WCEthereumTransaction):
-        logger.info(f"CALLBACK: onEthSendTransaction id={id_} - param={param}")
-        self.processTransaction(id_, param, action='send')
-
     def onEthSwitchChain(self, id_, param: WCEthereumSwitchChain):
         logger.info("CALLBACK: onEthSwitchChain")
         try:
             new_chain_id= int(param.chainId, 16)
             old_chain_id= self.wc_chain_id
-            msg= f"Dapp requests to switch from {hex(old_chain_id)} to {hex(new_chain_id)}" # todo: display readable name
-            (event, values)= self.sato_client.request('wallet_connect_approve_action', "switch chain", self.wc_address, hex(self.wc_chain_id), msg)
+            #msg= f"Dapp requests to switch from {hex(old_chain_id)} to {hex(new_chain_id)}" # todo: display readable name
+            msg= f"Dapp requests to switch from {NETWORK_DICT[old_chain_id]} to {NETWORK_DICT[new_chain_id]}" # todo: display readable name
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "switch chain", self.wc_address, self.wc_chain_id, msg)
             if event== 'Yes':
                 self.wc_chain_id= new_chain_id
                 self.wc_client.chainId= new_chain_id
@@ -576,6 +621,22 @@ class TransactionEIP1559(rlp.Serializable):
         ("value", big_endian_int),
         ("data", binary),
         ("access_list", CountableList(AccountAccesses)),
+    ]
+
+class TransactionEIP1559Signed(rlp.Serializable):
+    fields = [
+        ('chain_id', big_endian_int),
+        ('nonce', big_endian_int),
+        ('max_priority_fee_per_gas', big_endian_int),
+        ('max_fee_per_gas', big_endian_int),
+        ('gas', big_endian_int),
+        ('to', Binary.fixed_length(20, allow_empty=True)),
+        ('value', big_endian_int),
+        ('data', binary),
+        ('access_list', CountableList(AccountAccesses)),
+        ('y_parity', big_endian_int),
+        ('r', big_endian_int),
+        ('s', big_endian_int),
     ]
 
 class TransactionUnsigned(rlp.Serializable):
