@@ -241,13 +241,15 @@ class WCCallback:
         logger.info(f"CALLBACK: action= {action}")
         # parse tx
         from_= param.from_
-        to= param.to
-        nonce= param.nonce
         value= param.value
         data= param.data
-        if (param.gas is not None):
+        if param.to is not None:
+            to= param.to
+        else:
+            to= ""
+        if param.gas is not None:
             gas= param.gas # gas or gasLimit maybe  None
-        elif (param.gasLimit is not None):
+        elif param.gasLimit is not None:
             gas= param.gasLimit
         else:
             self.wc_client.rejectRequest(id_)
@@ -255,10 +257,20 @@ class WCCallback:
             logger.warning(f"CALLBACK: exception in processTransaction: no gas value present")
             self.sato_handler.show_error(msg_error)
             return
-        if (param.chainId is not None):
+        if param.chainId is not None:
             chainId= param.chainId
         else: # default
             chainId= self.wc_chain_id
+        if param.nonce is not None:
+            nonce= param.nonce
+        else:
+            nonce= self.get_account_nonce(self.wc_address, chainId)
+            if nonce is None:
+                self.wc_client.rejectRequest(id_)
+                msg_error= f"Transaction request rejected! \n\nCould not fetch nonce value"
+                logger.warning(f"CALLBACK: {msg_error}")
+                self.sato_handler.show_error(msg_error)
+                return
 
         # check that from equals self.wc_address
         if from_ != self.wc_address:
@@ -343,7 +355,7 @@ class WCCallback:
                 nonce= int(nonce, 16),
                 gas_price=int(gasPrice, 16),
                 gas= int(gas, 16),
-                to=b'' if (to is None) else bytes.fromhex(self.normalize(to)),
+                to= bytes.fromhex(self.normalize(to)),
                 value= int(value, 16),
                 data= bytes.fromhex(self.normalize(data)),
                 v= chainId,
@@ -359,7 +371,7 @@ class WCCallback:
                 max_priority_fee_per_gas=int(maxPriorityFeePerGas, 16),
                 max_fee_per_gas=int(maxFeePerGas, 16),
                 gas= int(gas, 16),
-                to= b'' if (to is None) else bytes.fromhex(self.normalize(to)),
+                to= bytes.fromhex(self.normalize(to)),
                 value= int(value, 16),
                 data= bytes.fromhex(self.normalize(data)),
                 access_list= accessList # TODO: parse accessList
@@ -419,7 +431,7 @@ class WCCallback:
                             nonce= int(nonce, 16),
                             gas_price=int(gasPrice, 16),
                             gas= int(gas, 16),
-                            to=b'' if (to is None) else bytes.fromhex(self.normalize(to)),
+                            to= bytes.fromhex(self.normalize(to)),
                             value= int(value, 16),
                             data= bytes.fromhex(self.normalize(data)),
                             v= v+35+2*chainId, #EIP155
@@ -434,7 +446,7 @@ class WCCallback:
                             max_priority_fee_per_gas=int(maxPriorityFeePerGas, 16),
                             max_fee_per_gas=int(maxFeePerGas, 16),
                             gas= int(gas, 16),
-                            to= b'' if (to is None) else bytes.fromhex(self.normalize(to)),
+                            to= bytes.fromhex(self.normalize(to)),
                             value= int(value, 16),
                             data= bytes.fromhex(self.normalize(data)),
                             access_list= accessList, # TODO: parse accessList
@@ -635,6 +647,26 @@ class WCCallback:
             logger.warning(f"Exception in get_gas_price_estimate: {ex}")
             return None
 
+    # TODO: put in pycryptotools
+    def get_account_nonce(self, address, chainid):
+        try:
+            logger.debug(f"in get_account_nonce: chainid: {chainid}")
+            import requests
+            url= f"https://ethereum-api.xyz/account-nonce?address={address}&chainId={chainid}"
+            logger.debug(f"in get_account_nonce: url: {url}")
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36'}
+            response = requests.get(url, headers=headers)
+            outputs = response.json()
+            logger.debug(f"in get_account_nonce: result: {outputs}")
+            is_success= outputs['success']
+            if is_success:
+                nonce= hex(int(outputs['result'])) # in hex
+                return nonce
+            else:
+                return None
+        except Exception as ex:
+            logger.warning(f"Exception in get_account_nonce: {ex}")
+            return None
 
 class Transaction(rlp.Serializable):
     fields = [
