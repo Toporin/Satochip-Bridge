@@ -272,12 +272,27 @@ class WCCallback:
         # Legacy, EIP 1559
         type_= param.type_
         if (type_ is None or type_== 0): # legacy
-            gasPrice= param.gasPrice
+            # parse gasPrice
+            if param.gasPrice is not None:
+                gasPrice= param.gasPrice
+                flag_gasprice= False
+            else:
+                gasPrice= self.get_gas_price_estimate(chainId)
+                flag_gasprice= True
+                if gasPrice is None:
+                    self.wc_client.rejectRequest(id_)
+                    msg_error=f"Error: could not determine gasPrice for this transaction. \nThe request has been rejected! \n\nRequest: \n{tx_txt}"
+                    logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
+                    self.sato_handler.show_error(msg_error)
+                    return
             #tx_txt= f"Legacy transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce} \nChainId: {chainId}"
             tx_txt= f"Legacy transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce}"
+            if flag_gasprice:
+                tx_txt= tx_txt + "\n\nWarning: check gasPrice (estimated automatically)"
 
         elif type_==1: # eip2930
-            gasPrice= param.gasPrice
+            # TODO!
+            gasPrice= param.gasPrice # TODO: check not None
             accessList = param.accessList # TODO
             logger.info(f"param.accessList= {param.accessList}")
             #tx_txt= f"EIP2930 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce} \nChainId: {chainId} \nAccessList: {accessList}"
@@ -589,6 +604,37 @@ class WCCallback:
                 logger.info(f"CALLBACK: get_index_from_address found path={child_bip32_path}")
                 return child_bip32_path
         return ""
+
+    # TODO: put in pycryptotools
+    def get_gas_price_estimate(self, chainid):
+        try:
+            logger.debug(f"in get_gas_price_estimate: chainid: {chainid}")
+            symbols_by_id= {0x1:"eth", 0x3:"eth", 25:"cro", 0x38:"bsc", 122:"fuse", 128:"ht", 137:"poly", 250:"ftm", 1285:"movr", 42220:"celo", 43114:"avax", 1666600000:"one"}
+            symbol= symbols_by_id.get(chainid, -1)
+            if symbol==-1:
+                logger.debug(f"in get_gas_price_estimate: chainid not supported!")
+                return None
+
+            import requests
+            # craft request
+            url= f"https://owlracle.info/{symbol}/gas?version=1"
+
+            # send requests and parse do_challenge_response
+            logger.debug(f"in get_gas_price_estimate: url: {url}")
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36'}
+            response = requests.get(url, headers=headers)
+            try:
+                outputs = response.json()
+                logger.debug(f"in get_gas_price_estimate: result: {outputs}")
+                gas_price= hex(int(outputs['standard']*(10**9))) # in wei, in hex
+                return gas_price
+            except (ValueError, KeyError):
+                logger.warning(f"in get_gas_price_estimate: unable to decode JSON from result: {response.text}")
+                return None
+        except Exception as ex:
+            logger.warning(f"Exception in get_gas_price_estimate: {ex}")
+            return None
+
 
 class Transaction(rlp.Serializable):
     fields = [
