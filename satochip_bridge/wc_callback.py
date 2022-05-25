@@ -38,7 +38,8 @@ logger.setLevel(logging.DEBUG)
 
 BIP32_PATH_LIST= ["m/44'/60'/0'/0/", "m/44'/1'/0'/0/", "m/"]
 #CHAINID_LIST= ["0x1 - Ethereum", "0x3 - Ropsten", "0x38 - Binance Smart Chain"]
-NETWORK_DICT= {0x1:"Ethereum", 0x3:"Ropsten", 0x38:"Binance Smart Chain"}
+NETWORK_DICT= {0x1:"Ethereum", 0x3:"Ropsten", 0x38:"Binance Smart Chain",
+                137: "Polygon", 250:"Fantom", 10000:"BCH", 43114:"Avalanche", 1666600000:"Harmony"}
 CHAINID_DICT= {v:k for k, v in NETWORK_DICT.items()}
 
 CURVE_ORDER = SECP256k1.order
@@ -470,6 +471,7 @@ class WCCallback:
                 #logger.debug('APIKEYS: '+ str(self.apikeys))
 
         # craft requests
+        # TODO: add this in pycryptotools
         import requests
         if chainId== 0x1: # ethereum
             apikey= self.apikeys.get('API_KEY_ETHERSCAN','0')
