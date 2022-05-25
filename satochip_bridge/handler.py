@@ -604,7 +604,7 @@ class HandlerSimpleGUI:
                 icon_raw= bio.getvalue()
                 icon_available= True
         except Exception as ex:
-            logger.debug(f'Exception while fetching image from url: {icon_url}  Exception: {ex}')
+            logger.debug(f'Exception while fetching icon from url: Exception: {ex}')
         # icon layout
         if icon_available:
             icon_layout = [
@@ -612,7 +612,7 @@ class HandlerSimpleGUI:
             ]
         else:
             icon_layout = [
-                [sg.Text("(Unable to display icon!)")],
+                [sg.Text("")],
             ]
         # layout
         info_layout = [
