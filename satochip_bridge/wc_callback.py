@@ -172,8 +172,9 @@ class WCCallback:
             msg={}
             msg['action']= "sign_msg_hash"
             msg['alt']= "Ethereum"
-            msg['msg']= msg_txt # msg_raw # in hex format
             msg['hash']= msg_hash.hex()
+            msg['msg']= msg_raw # string in hex format for personal-message, or json-serialized for typed-message
+            msg['msg_type']= wc_sign_type
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
         else:
             # request user approval via GUI
@@ -391,6 +392,7 @@ class WCCallback:
             msg['tx']= tx_bytes.hex()
             msg['hash']= tx_hash.hex()
             msg['from']= from_ #self.wc_address TODO
+            msg['chain']= "EVM"
             msg['chainId']= chainId # optionnal, otherwise taken from tx deserialization...
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
             if not is_approved:
