@@ -262,7 +262,7 @@ class WCCallback:
             chainId= param.chainId
         else: # default
             chainId= self.wc_chain_id
-        if param.nonce is not None:
+        if param.nonce is not None and param.nonce!="0x":
             nonce= param.nonce
         else:
             nonce= self.get_account_nonce(self.wc_address, chainId)
@@ -462,13 +462,13 @@ class WCCallback:
                 logger.info(f"CALLBACK: onEthSignTransaction - tx_raw_hex= {tx_signed_hex}")
 
                 # broadcast tx and get tx_hash
-                tx_signed_hash_hex= self.broadcastTransaction(chainId, tx_signed_hex)
+                (tx_signed_hash_hex, msg_error)= self.broadcastTransaction(chainId, tx_signed_hex)
                 if tx_signed_hash_hex is None:
-                    # TODO: show tx in error msg
                     self.wc_client.rejectRequest(id_)
-                    msg_error=f"Failed to broadcast signed transaction! \n\nSigned tx:{tx_signed_hex}"
-                    logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
-                    self.sato_handler.show_error(msg_error)
+                    #msg_error=f"Failed to broadcast signed transaction! \n\nError:{error}"
+                    logger.warning(f"CALLBACK: error in processTransaction failed to broadcast tx: {msg_error}")
+                    #self.sato_handler.show_error(msg_error)
+                    (event, values)= self.sato_client.request('wallet_connect_show_signed_tx', tx_signed_hex, msg_error)
                     return
                 self.wc_client.approveRequest(id_, tx_signed_hash_hex)
                 self.sato_handler.show_notification("Notification","Broadcast transaction request approved by user")
@@ -515,8 +515,9 @@ class WCCallback:
             apikey= self.apikeys.get('API_KEY_BSCSCAN','0')
             url= f"https://api-testnet.bscscan.com/api/?module=proxy&action=eth_sendRawTransaction&hex={tx_signed_hex}&apikey={apikey}"
         else:
-            logger.debug(f"in broadcastTransaction: unsupported chainId: {chainId}")
-            return None
+            msg_error= f"unsupported chainId: {chainId}"
+            logger.debug(msg_error)
+            return (None, msg_error)
 
         # send requests and parse do_challenge_response
         logger.debug(f"in broadcastTransaction: url: {url}")
@@ -526,11 +527,12 @@ class WCCallback:
             outputs = response.json()
             logger.debug(f"in broadcastTransaction: result: {outputs}")
             tx_signed_hash_hex= outputs['result'] # in str format
-            return tx_signed_hash_hex
+            return (tx_signed_hash_hex, "Transaction broadcasted successfully!")
         except (ValueError, KeyError):
-            logger.warning(f"in broadcastTransaction: unable to decode JSON from result: {response.text}")
-            return None
-        return None
+            msg_error= f"unable to decode JSON from server: \n{response.text}"
+            logger.warning(msg_error)
+            return (None, msg_error)
+        return (None, "unknown error")
 
     def onEthSwitchChain(self, id_, param: WCEthereumSwitchChain):
         logger.info("CALLBACK: onEthSwitchChain")

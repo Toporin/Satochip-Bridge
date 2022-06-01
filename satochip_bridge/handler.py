@@ -623,6 +623,22 @@ class HandlerSimpleGUI:
         layout = [sg.Column(info_layout), sg.Column(icon_layout)]
         return layout
 
+    def wallet_connect_show_signed_tx(self, tx_signed_hex, msg_error):
+        logger.debug('In wallet_connect_show_signed_tx')
+        layout = [
+            [sg.Text(f"Failed to broadcast signed transaction!")],
+            [sg.Text(f"Error:")],
+            [sg.Multiline(msg_error, size=(60,5) )],
+            [sg.Text(f"Signed transaction:")],
+            [sg.Multiline(tx_signed_hex, size=(60,5) )],
+            [sg.Button("Ok", key='Yes')],
+        ]
+        window = sg.Window('WalletConnect: error', layout, icon=self.satochip_icon)  #ok
+        event, values = window.read()
+        window.close()
+        del window
+        return (event, values)
+
     # communicate with other threads through queues
     def reply(self):
 
