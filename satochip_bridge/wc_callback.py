@@ -7,9 +7,9 @@ from os import path
 from configparser import ConfigParser
 from rlp.sedes import BigEndianInt, big_endian_int, Binary, binary, CountableList
 from hashlib import sha256
-from ecdsa import SigningKey, VerifyingKey, SECP256k1 # todo: remove
-from ecdsa.util import sigencode_string_canonize # todo: remove
-from ecdsa.curves import SECP256k1 # todo: remove
+# from ecdsa import SigningKey, VerifyingKey, SECP256k1 # todo: remove
+# from ecdsa.util import sigencode_string_canonize # todo: remove
+# from ecdsa.curves import SECP256k1 # todo: remove
 from eth_hash.auto import keccak
 from pykson import Pykson
 from datetime import datetime
@@ -42,7 +42,7 @@ NETWORK_DICT= {0x1:"Ethereum", 0x3:"Ropsten", 0x38:"Binance Smart Chain",
                 137: "Polygon", 250:"Fantom", 10000:"BCH", 43114:"Avalanche", 1666600000:"Harmony"}
 CHAINID_DICT= {v:k for k, v in NETWORK_DICT.items()}
 
-CURVE_ORDER = SECP256k1.order
+#CURVE_ORDER = SECP256k1.order
 MAX_INDEX = 1000 # should be same as eth-walletconnect-keyring constant
 
 class WCCallback:
