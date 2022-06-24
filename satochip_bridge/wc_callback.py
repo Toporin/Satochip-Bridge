@@ -7,9 +7,9 @@ from os import path
 from configparser import ConfigParser
 from rlp.sedes import BigEndianInt, big_endian_int, Binary, binary, CountableList
 from hashlib import sha256
-from ecdsa import SigningKey, VerifyingKey, SECP256k1
-from ecdsa.util import sigencode_string_canonize
-from ecdsa.curves import SECP256k1
+from ecdsa import SigningKey, VerifyingKey, SECP256k1 # todo: remove
+from ecdsa.util import sigencode_string_canonize # todo: remove
+from ecdsa.curves import SECP256k1 # todo: remove
 from eth_hash.auto import keccak
 from pykson import Pykson
 from datetime import datetime
@@ -106,6 +106,7 @@ class WCCallback:
         wc_sign_type= wc_ethereum_sign_message.type_
         logger.info(f"CALLBACK: onEthSign - wc_sign_type= {wc_sign_type}")
         if wc_sign_type=="MESSAGE" or wc_sign_type=="PERSONAL_MESSAGE":
+            chainId= 1 # Ethereum by default since personal message does not specify chainId
             if wc_sign_type=="MESSAGE": # also called 'standard'
                 address= raw[0]
                 msg_raw= raw[1]
@@ -133,6 +134,8 @@ class WCCallback:
                     typed_data= json_data
                 try:
                     logger.warning(f"CALLBACK: in onEthSign typed_data= {typed_data}")
+                    chainId= int(typedData.get('domain').get('chainId', 3)) # ropsten by default for security
+                    typedData['domain']['chainId']= chainId
                     msg_hash= eip712.encoding.encode_typed_data(typed_data)
                 except Exception as ex:
                     # fallback: use domainSeparatorHex & hashStructMessageHex hashes for blind Signing
@@ -178,7 +181,7 @@ class WCCallback:
             (is_approved, hmac)= Sato2FA.do_challenge_response(self.sato_client, msg)
         else:
             # request user approval via GUI
-            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, self.wc_chain_id, msg_txt)
+            (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign message", self.wc_address, chainId, msg_txt)
             if event== 'Yes':
                 is_approved= True
                 # todo: check selected network/chain_id?
@@ -339,7 +342,7 @@ class WCCallback:
             if event== 'Yes':
                 # check chainId: if user changed the network, it will be reflected in the tx to sign
                 new_network= values["network"]
-                new_chainId= CHAINID_DICT[new_network]
+                new_chainId= CHAINID_DICT.get(new_network, int(new_network, 16)) # new_network can be hexstring if not listed in NETWORK_DICT
                 if (new_chainId != chainId):
                     logger.info(f"CALLBACK changed chainId from {hex(chainId)} to {hex(new_chainId)}")
                     chainId= new_chainId
@@ -587,16 +590,15 @@ class WCCallback:
         return addr
 
     def msgtohash(self, msg_bytes: bytes) -> bytes:
-
         msg_length = str(len(msg_bytes)).encode('utf-8')
         msg_encoded= b'\x19Ethereum Signed Message:\n' + msg_length + msg_bytes
         msg_hash= keccak(msg_encoded)
         return msg_hash
 
-    def txtohash(self, tx_json: str) -> bytes:
-        tx_bytes= tx_json.encode('utf-8')
-        tx_hash= keccak(tx_bytes)
-        return tx_hash
+    # def txtohash(self, tx_json: str) -> bytes:
+    #     tx_bytes= tx_json.encode('utf-8')
+    #     tx_hash= keccak(tx_bytes)
+    #     return tx_hash
 
     def get_path_from_address(self, address: str) -> str:
         """ returns the index corresponding to a given address, presumably BIP32 derived from chaincode and pubkey

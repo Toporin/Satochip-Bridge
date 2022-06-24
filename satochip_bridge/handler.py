@@ -542,21 +542,44 @@ class HandlerSimpleGUI:
         return (event, values)
 
     def wallet_connect_approve_action(self, action, address, chain_id, data):
-
-        initial_network= NETWORK_DICT[chain_id]
         logger.debug('In wallet_connect_approve_action')
+        if chain_id in NETWORK_DICT:
+            initial_network= NETWORK_DICT[chain_id]
+            networks= list(NETWORK_DICT.values())
+        else:
+            initial_network= hex(chain_id)
+            networks= [hex(chain_id)] + list(NETWORK_DICT.values())
+        #initial_network= NETWORK_DICT.get(chain_id, hex(chain_id)) #NETWORK_DICT[chain_id]
         layout = [
             [sg.Text("An app wants to perform the following on your Satochip via WalletConnect:")],
             [sg.Text(f"Action: {action}")],
             [sg.Text(f"Address: {address}")],
             #[sg.Text(f"ChainId: {chain_id}")],
-            [sg.Text(f"Network:"), sg.InputCombo(list(NETWORK_DICT.values()), key='network', size=(20, 1), default_value=initial_network),],
+            [sg.Text(f"Network:"), sg.InputCombo(networks, key='network', size=(20, 1), default_value=initial_network),],
             [sg.Text(f"Details:")],
             [sg.Multiline(data, size=(60,6) )],
             #[sg.Text(f"Approve this action?")],
             [sg.Button("Approve", key='Yes'), sg.Button("Reject", key='No')],
         ]
         window = sg.Window('WalletConnect: confirmation required', layout, icon=self.satochip_icon)  #ok
+        event, values = window.read()
+        window.close()
+        del window
+        return (event, values)
+
+    def satochip_approve_action(self, action, address, chain_id, data):
+        network= NETWORK_DICT.get(chain_id, hex(chain_id)) #NETWORK_DICT[chain_id]
+        logger.debug('In satochip_approve_action')
+        layout = [
+            [sg.Text("An app wants to perform the following on your Satochip:")],
+            [sg.Text(f"Action: {action}")],
+            [sg.Text(f"Address: {address}")],
+            [sg.Text(f"Network: {network}")],
+            [sg.Text(f"Details:")],
+            [sg.Multiline(data, size=(60,6) )],
+            [sg.Button("Approve", key='Yes'), sg.Button("Reject", key='No')],
+        ]
+        window = sg.Window('Satochip: confirmation required', layout, icon=self.satochip_icon)  #ok
         event, values = window.read()
         window.close()
         del window

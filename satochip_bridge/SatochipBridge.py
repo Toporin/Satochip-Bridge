@@ -4,17 +4,17 @@ import time
 import logging
 import sys
 import os.path
+import rlp
+from rlp.sedes import BigEndianInt, big_endian_int, Binary, binary, CountableList
+from eth_hash.auto import keccak
+from py_eth_sig_utils import eip712
+from py_eth_sig_utils import utils as eip712_utils
 #import traceback
 
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 
 from pysatochip.CardConnector import CardConnector #, UninitializedSeedError
 from pysatochip.Satochip2FA import Satochip2FA, SERVER_LIST
-#from pysatochip.JCconstants import JCconstants
-#from pysatochip.version import SATOCHIP_PROTOCOL_MAJOR_VERSION, SATOCHIP_PROTOCOL_MINOR_VERSION, SATOCHIP_PROTOCOL_VERSION
-
-# from Client import Client
-# from handler import HandlerSimpleGUI
 
 try:
     from Client import Client
@@ -25,13 +25,6 @@ except Exception as e:
     from satochip_bridge.Client import Client
     from satochip_bridge.handler import HandlerSimpleGUI
     from satochip_bridge.sato2FA import Sato2FA
-
-# try:
-    # from eth_keys import keys, KeyAPI
-    # from eth_keys.backends import NativeECCBackend
-# except Exception as e:
-    # print("Import exception for eth_keys")
-    # print(repr(e))
 
 if (len(sys.argv)>=2) and (sys.argv[1]in ['-v', '--verbose']):
     logging.basicConfig(level=logging.DEBUG, format='%(levelname)s [%(module)s] %(funcName)s | %(message)s')
@@ -112,93 +105,202 @@ class SatochipBridge(WebSocket):
                 self.sendMessage(reply)
                 logger.debug("Reply: "+reply)
 
-            elif (action=="sign_tx_hash") or (action=="sign_msg_hash"):
+            elif (action=="sign_tx_hash"):
+                # only for EVM compatible blockchains
+                path= msg["path"]
+                tx=  msg["txDict"]
+                hash= msg["hash"]
+                logger.debug(f"sign_tx_hash: tx= {tx}")
+                logger.debug(f"sign_tx_hash: hash= {hash}")
+                # parse tx
+                from_= tx['from']
+                value= tx['value']
+                data= tx['data']
+                nonce= tx['nonce']
+                gas= tx['gasLimit']
+                to= tx.get('to', "")
+                if to is None: # for contract deployment
+                    to=''
+                chainId= tx.get('chainId', 3) # ropsten by default, for security
+
+                # Parse tx for display
+                # Legacy, EIP 1559
+                type_= tx.get('type', None)
+                if (type_ is None or type_== 0): # legacy
+                    # parse gasPrice
+                    gasPrice= tx['gasPrice']
+                    tx_txt= f"Legacy transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce}"
+
+                elif type_==2: # eip1559
+                    maxPriorityFeePerGas= tx['maxPriorityFeePerGas']
+                    maxFeePerGas= tx['maxFeePerGas']
+                    accessList= tx['accessList'] # TODO
+                    logger.info(f"tx['accessList']= {tx['accessList']}")
+                    tx_txt= f"EIP1559 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nMaxFeePerGas: {maxFeePerGas} \nMaxPriorityFeePerGas: {maxPriorityFeePerGas} \nData: {data} \nNonce: {nonce} \nAccessList: {accessList}"
+
+                else:
+                    d= {'requestID':msg["requestID"], 'action':msg["action"],
+                        'exitstatus':EXIT_FAILURE, 'reason':'unsupported transaction type'}
+                    msg_error= f"Transaction request rejected! Error: unsupported transaction type: {type_}"
+                    logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
+                    cc.client.request('show_error', msg_error)
+                    return
+
+                # request user approval via GUI
+                hmac= None
+                is_approved= False
+                (event, values)= cc.client.request('satochip_approve_action', "sign transaction", from_, chainId, tx_txt)
+                if event== 'Yes':
+                    is_approved= True
+
+                # compute tx hash
+                if (type_ is None or type_== 0): # legacy
+                    tx_obj= Transaction( # EIP155
+                        nonce= int(nonce, 16),
+                        gas_price=int(gasPrice, 16),
+                        gas= int(gas, 16),
+                        to= bytes.fromhex(self.normalize(to)),
+                        value= int(value, 16),
+                        data= bytes.fromhex(self.normalize(data)),
+                        v= chainId,
+                        r=0,
+                        s=0,
+                    )
+                    tx_bytes= rlp.encode(tx_obj)
+
+                elif type_==2: # eip1559
+                    tx_obj= TransactionEIP1559(
+                        chain_id= chainId,
+                        nonce= int(nonce, 16),
+                        max_priority_fee_per_gas=int(maxPriorityFeePerGas, 16),
+                        max_fee_per_gas=int(maxFeePerGas, 16),
+                        gas= int(gas, 16),
+                        to= bytes.fromhex(self.normalize(to)),
+                        value= int(value, 16),
+                        data= bytes.fromhex(self.normalize(data)),
+                        access_list= accessList # TODO: parse accessList
+                    )
+                    tx_bytes= bytes([2]) + rlp.encode(tx_obj)
+
+                tx_hash= keccak(tx_bytes)
+                logger.info(f"sign_tx_hash: - tx_bytes= {tx_bytes.hex()}")
+                logger.info(f"sign_tx_hash - tx_hash= {tx_hash.hex()}")
+
+                # 2FA approval if enabled
+                if cc.needs_2FA:
+                    is_approved= False
+                    # construct request msg for 2FA
+                    msg2FA={}
+                    msg2FA['action']= "sign_tx_hash"
+                    msg2FA['tx']= tx_bytes.hex()
+                    msg2FA['hash']= tx_hash.hex()
+                    msg2FA['from']= from_
+                    msg2FA['chain']= "EVM"
+                    msg2FA['chainId']= chainId # optionnal, otherwise taken from tx deserialization...
+                    (is_approved, hmac)= Sato2FA.do_challenge_response(client, msg2FA)
+
+                if not is_approved:
+                    d= {'requestID':msg["requestID"], 'action':msg["action"],
+                        'exitstatus':EXIT_FAILURE, 'reason':'request rejected by user'}
+                    reply= json.dumps(d)
+                    self.sendMessage(reply)
+                    logger.debug("Reply: "+reply)
+                    logger.info(f"CALLBACK Approve signature? NO!")
+                    cc.client.request('show_notification', "Notification","Transaction request rejected by user")
+                    return
+
+                # Sign tx
+                try:
+                    # derive key
+                    (pubkey, chaincode)= cc.card_bip32_get_extendedkey(path)
+                    logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
+                    # sign hash
+                    keynbr=0xFF
+                    (response, sw1, sw2)= cc.card_sign_transaction_hash(keynbr, list(tx_hash), hmac)
+                    logger.info(f"CALLBACK: processTransaction - response= {response}")
+                    # parse sig
+                    (r,s,v, sigstring)= cc.parser.parse_rsv_from_dersig(bytes(response), tx_hash, pubkey)
+                    # r,s,v:int convert to hex (64-char padded with 0)
+                    r= "{0:0{1}x}".format(r,64)
+                    s= "{0:0{1}x}".format(s,64)
+                    logger.info(f"CALLBACK: processTransaction - r= {r}")
+                    logger.info(f"CALLBACK: processTransaction - s= {s}")
+                    logger.info(f"CALLBACK: processTransaction - v= {v}")
+                    logger.info(f"CALLBACK: processTransaction - sigstring= {sigstring.hex()}")
+                    sigstring= sigstring[1:]+sigstring[0:1] # for walletconnect, the v byte is appended AFTER r,s...
+                    logger.info(f"CALLBACK: processTransaction - sigstring= {sigstring.hex()}")
+                    sign_hex= "0x"+sigstring.hex()
+                    d= {'requestID':msg["requestID"], 'action':msg["action"],
+                        "sig":sign_hex, "r":r, "s":s, "v":v, "pubkey":pubkey.get_public_key_bytes().hex(),
+                        'exitstatus':EXIT_SUCCESS}
+                    reply= json.dumps(d)
+                    self.sendMessage(reply)
+                    logger.debug("Reply: "+reply)
+                    cc.client.request('show_notification', "Notification","Sign transaction request approved by user")
+                    return
+
+                except Exception as ex:
+                    #TODO
+                    logger.warning(f"Sign_tx_hash exception: {ex}")
+                    d= {'requestID':msg["requestID"], 'action':msg["action"],
+                        "sig":71*'00', "r":32*'00', "s":32*'00', "v":0 , "pubkey":pubkey.get_public_key_bytes().hex(),
+                        'exitstatus':EXIT_FAILURE, 'reason':'exception during signature'}
+                    reply= json.dumps(d)
+                    self.sendMessage(reply)
+                    logger.debug("Reply: "+reply)
+                    cc.client.request('show_error', 'Failed to approve transaction! \n\nError:{ex}')
+                    return
+
+            elif (action=="sign_msg_hash"):
+                # parse txt and hash
+                chainId= 1 # default since personal message does not include chainId
+                msg_raw= msg['msg']
+                #hash= msg['hash'] # not used since hash is recomputed
+                msg_bytes= bytes.fromhex(self.normalize(msg_raw))
+                msg_hash= self.msgtohash(msg_bytes)
+                try:
+                    msg_txt= msg_bytes.decode('utf-8')
+                except Exception as ex:
+                    msg_txt= str(msg_bytes)
 
                 # prepare key corresponding to desired path
                 path= msg["path"]
-                #(depth, bytepath)= parser.bip32path2bytes(path)
                 (pubkey, chaincode)= cc.card_bip32_get_extendedkey(path)
+                address= self.pubkey_to_ethereum_address(pubkey.get_public_key_bytes(compressed=False))
                 logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
-                logger.debug("Sign hash: "+ msg["hash"])
-                keynbr=0xFF
+                logger.debug("Sign with address: " + address)
 
                 is_approved= False
                 hmac= None
+                (event, values)= cc.client.request('satochip_approve_action', "sign message", address, chainId, msg_txt)
+                if event== 'Yes':
+                    is_approved= True
+
                 if cc.needs_2FA:
-                    #msg2FA= {'action':action, 'msg':message, 'alt':'etherlike'}
-                    (is_approved, hmac)= Sato2FA.do_challenge_response(client, msg)
-
-                    # msg_2FA=  json.dumps(msg)
-                    # (id_2FA, msg_2FA)= cc.card_crypt_transaction_2FA(msg_2FA, True)
-                    # d={}
-                    # d['msg_encrypt']= msg_2FA
-                    # d['id_2FA']= id_2FA
-                    # logger.debug("encrypted message: "+msg_2FA)
-                    # logger.debug("id_2FA: "+ id_2FA)
-
-                    # try:
-                        # # get server from config file
-                        # if os.path.isfile('satochip_bridge.ini'):
-                            # from configparser import ConfigParser
-                            # config = ConfigParser()
-                            # config.read('satochip_bridge.ini')
-                            # server_default= config.get('2FA', 'server_default')
-                        # else:
-                            # server_default= SERVER_LIST[0] # no config file => default server
-                        # #do challenge-response with 2FA device...
-                        # notif= '2FA request sent! Approve or reject request on your second device.'
-                        # cc.client.request('show_notification', 'Notification', notif)
-                        # #cc.client.request('show_message', notif)
-                        # Satochip2FA.do_challenge_response(d, server_default)
-                        # # decrypt and parse reply to extract challenge response
-                        # reply_encrypt= d['reply_encrypt']
-                        # reply_decrypt= cc.card_crypt_transaction_2FA(reply_encrypt, False)
-                    # except Exception as e:
-                        # cc.client.request('show_error', "No response received from 2FA...")
-                        # msg['exitstatus']=EXIT_FAILURE
-                        # msg['reason']= "No response received from 2FA"
-                        # reply= json.dumps(msg)
-                        # self.sendMessage(reply)
-                        # return
-                    # logger.debug("challenge:response= "+ reply_decrypt)
-                    # reply_decrypt= reply_decrypt.split(":")
-                    # chalresponse=reply_decrypt[1]
-                    # hmac= list(bytes.fromhex(chalresponse))
-                    # notif= 'Received response from 2FA device!'
-                    # cc.client.request('show_notification', 'Notification', notif)
-                else:
-                    logger.debug("Skip confirmation for this action? "+ str(wallets[self]) )
-                    if not wallets[self]: #if confirm required
-                        request_action= "sign a message" if action=="sign_msg_hash" else "sign a transaction"
-                        request_msg= ("A client wants to perform the following on your Satochip:"+
-                                                        "\n\tAction: "+ request_action +
-                                                        "\n\tAddress:"+ str(self.address)+
-                                                        "\n\nApprove action?")
-                        (event, values)= cc.client.request('approve_action', request_msg)
-                        if event== 'No' or event== 'None':
-                            #hmac=20*[0] # will trigger reject
-                            is_approved= False
-                        else:
-                            is_approved= True
-                            wallets[self]= values['skip_conf']
+                    is_approved= False
+                    msg2FA={}
+                    msg2FA['action']= "sign_msg_hash"
+                    msg2FA['alt']= "Ethereum"
+                    msg2FA['hash']= msg_hash.hex()
+                    msg2FA['msg']= msg_raw # string in hex format for personal-message
+                    msg2FA['msg_type']= 'PERSONAL_MESSAGE'
+                    (is_approved, hmac)= Sato2FA.do_challenge_response(client, msg2FA)
 
                 if not is_approved:
-                    d= {'requestID':msg["requestID"], 'action':msg["action"], "hash":msg["hash"],
-                        "sig":71*'00', "r":32*'00', "s":32*'00', "v":0 , "pubkey":pubkey.get_public_key_bytes().hex(),
+                    d= {'requestID':msg["requestID"], 'action':msg["action"],
                         'exitstatus':EXIT_FAILURE, 'reason':'Signing request rejected by user'}
                     reply= json.dumps(d)
                     self.sendMessage(reply)
                     logger.debug("Reply: "+reply)
                     return
                 else:
-                    hash= list(bytes.fromhex(msg["hash"]))
-                    (response, sw1, sw2)=cc.card_sign_transaction_hash(keynbr, hash, hmac)
+                    keynbr=0xFF
+                    (response, sw1, sw2)=cc.card_sign_transaction_hash(keynbr, list(msg_hash), hmac)
 
                     # convert sig to rsv format:
                     logger.debug ("Convert sig to rsv format...")
                     try:
-                        #compsig= parser.parse_hash_signature(response, bytes.fromhex(msg["hash"]), pubkey)
-                        (r,s,v, sigstring)= cc.parser.parse_rsv_from_dersig(bytes(response), bytes.fromhex(msg["hash"]), pubkey)
+                        (r,s,v, sigstring)= cc.parser.parse_rsv_from_dersig(bytes(response), msg_hash, pubkey)
                         # r,s,v:int convert to hex (64-char padded with 0)
                         r= "{0:0{1}x}".format(r,64)
                         s= "{0:0{1}x}".format(s,64)
@@ -209,24 +311,111 @@ class SatochipBridge(WebSocket):
                     except Exception as e:
                         logger.warning("Exception in parse_rsv_from_dersig: " + repr(e))
                         cc.client.request('show_error', "Exception in parse_rsv_from_dersig: " + repr(e))
-                        msg['exitstatus']=EXIT_FAILURE
-                        msg['reason']= "Exception in parse_rsv_from_dersig"
-                        reply= json.dumps(msg)
+                        d= {'requestID':msg["requestID"], 'action':msg["action"],
+                            'exitstatus':EXIT_FAILURE, 'reason':'Exception in parse_rsv_from_dersig'}
+                        reply= json.dumps(d)
                         self.sendMessage(reply)
                         return
-                    d= {'requestID':msg["requestID"], 'action':msg["action"], "hash":msg["hash"],
-                                "sig":sigstring.hex(), "r":r, "s":s, "v":v, "pubkey":pubkey.get_public_key_bytes().hex(),
-                                'exitstatus':EXIT_SUCCESS}
+                    d= {'requestID':msg["requestID"], 'action':msg["action"],
+                        'sig':sigstring.hex(), "r":r, "s":s, "v":v, "pubkey":pubkey.get_public_key_bytes().hex(),
+                        'exitstatus':EXIT_SUCCESS}
+                    reply= json.dumps(d)
+                    self.sendMessage(reply)
+                    logger.debug("Reply: "+reply)
+                    return
+
+            elif (action=="sign_typed_data_hash"):
+                # currently, only for ethereum-compatible VM
+                # prepare key corresponding to desired path
+                path= msg["path"]
+                address= msg["address"]
+                logger.debug("Sign with address: "+ address)
+
+                typedData= msg["typedData"]
+                domainSeparatorHex= msg["domainSeparatorHex"]
+                hashStructMessageHex= msg["hashStructMessageHex"]
+                # get chainId and ensure that chainId is an int
+                chainId= int(typedData.get('domain').get('chainId', 3)) # ropsten by default for security
+                typedData['domain']['chainId']= chainId
+                try:
+                    logger.warning(f"CALLBACK: in onEthSign typedData= {typedData}")
+                    msg_hash= eip712.encoding.encode_typed_data(typedData)
+                    msg_txt= json.dumps(typedData)
+                except Exception as ex:
+                    # fallback: use domainSeparatorHex & hashStructMessageHex hashes for blind Signing
+                    logger.warning(f"CALLBACK: exception in onEthSign while parsing typedData: {ex}")
+                    msg_hash= eip712_utils.sha3(bytes.fromhex('19') +
+                                                bytes.fromhex('01') +
+                                                bytes.fromhex(domainSeparatorHex) +
+                                                bytes.fromhex(hashStructMessageHex))
+                    msg_txt= f"WARNING: could not parse typedData (error: {ex}). \n\nBlind signing using msg_hash: {msg_hash.hex()}"
+                    logger.warning(f"CALLBACK: blind signing using msg_hash: {msg_hash.hex()}")
+
+                is_approved= False
+                hmac= None
+                (event, values)= client.request('satochip_approve_action', "sign message", address, chainId, msg_txt)
+                if event== 'Yes':
+                    is_approved= True
+
+                if cc.needs_2FA:
+                    is_approved= False
+                    # construct request msg for 2FA
+                    msg2FA={}
+                    msg2FA['action']= "sign_msg_hash"
+                    msg2FA['alt']= "Ethereum"
+                    msg2FA['hash']= msg_hash.hex()
+                    msg2FA['msg_type']= "TYPED_MESSAGE"
+                    msg2FA['msg']= json.dumps({'typedData':typedData, 'domainSeparatorHex':domainSeparatorHex, 'hashStructMessageHex':hashStructMessageHex})# string in hex format for personal-message, or json-serialized for typed-message
+                    (is_approved, hmac)= Sato2FA.do_challenge_response(client, msg2FA)
+
+                if is_approved:
+                    # derive key
+                    logger.debug(f"Derivation path= {path}")
+                    (pubkey, chaincode)= cc.card_bip32_get_extendedkey(path)
+                    logger.debug("Sign with pubkey: "+ pubkey.get_public_key_bytes(compressed=False).hex())
+                    logger.debug(f"Address= {self.pubkey_to_ethereum_address(pubkey.get_public_key_bytes(compressed=False))}")
+                    # todo: check addresses match!
+                    #sign msg hash
+                    keynbr=0xFF
+                    (response, sw1, sw2)= cc.card_sign_transaction_hash(keynbr, list(msg_hash), hmac)
+                    logger.info(f"CALLBACK: onEthSign - response= {response}")
+                    # parse sig
+                    (r,s,v, sigstring)= cc.parser.parse_rsv_from_dersig(bytes(response), msg_hash, pubkey)
+                    # r,s,v:int convert to hex (64-char padded with 0)
+                    r= "{0:0{1}x}".format(r,64)
+                    s= "{0:0{1}x}".format(s,64)
+                    logger.info(f"CALLBACK: onEthSign - r= {r}")
+                    logger.info(f"CALLBACK: onEthSign - s= {s}")
+                    logger.info(f"CALLBACK: onEthSign - v= {v}")
+                    logger.info(f"CALLBACK: onEthSign - sigstring= {sigstring.hex()}")
+                    #sigstring= sigstring[1:]+ bytes([v+27])# for walletconnect, the v byte is appended AFTER r,s...
+                    sigstring= sigstring[1:]+ bytes([v])# for walletconnect, the v byte is appended AFTER r,s...
+                    logger.info(f"CALLBACK: onEthSign - sigstring= {sigstring.hex()}")
+                    sign_hex= "0x"+sigstring.hex()
+                    #self.sato_handler.show_notification("Notification","Message signature request approved by user")
+                    d= {'requestID':msg["requestID"], 'action':msg["action"],
+                        "sig":sign_hex, "r":r, "s":s, "v":v, "pubkey":pubkey.get_public_key_bytes().hex(),
+                        'exitstatus':EXIT_SUCCESS}
+                    reply= json.dumps(d)
+                    self.sendMessage(reply)
+                    logger.debug("Reply: "+reply)
+                    return
+
+                else:
+                    d= {'requestID':msg["requestID"], 'action':msg["action"],
+                        'exitstatus':EXIT_FAILURE, 'reason':'Signing request rejected by user'}
                     reply= json.dumps(d)
                     self.sendMessage(reply)
                     logger.debug("Reply: "+reply)
                     return
 
             else:
-                d= {'requestID':msg['requestID'], 'action':msg['action'], 'exitstatus':EXIT_FAILURE, 'reason':'Action unknown'}
+                d= {'requestID':msg['requestID'], 'action':msg['action'],
+                    'exitstatus':EXIT_FAILURE, 'reason':'Action unknown'}
                 reply= json.dumps(d)
                 self.sendMessage(reply)
                 logger.warning("Unknown action: "+action)
+                return
 
         except Exception as e:
             # return failure code
@@ -237,7 +426,6 @@ class SatochipBridge(WebSocket):
             self.sendMessage(reply)
             cc.client.request('show_error','[handleMessage] Exception: '+repr(e))
             return
-            #traceback.print_exc()
 
     #TODO: Only one connection at a time?
     def handleConnected(self):
@@ -272,24 +460,82 @@ class SatochipBridge(WebSocket):
         wallets[self]= values['skip_conf']
         logger.debug("Skip future confirmation for this connection? "+str(wallets[self]) )
 
-        #is_approved= cc.client.request('yes_no_question', msg)
-        # if not is_approved:
-            # logger.info("Connection to Satochip was rejected!")
-            # self.close()
-            # return
-
-        # We do not touch the card until we receive an actual request (in handleMessage)
-        # try:
-            # cc.client.card_init_connect()
-        # except Exception as e:
-            # cc.client.request('show_error','[handleConnected] Exception:'+repr(e))
-            # logger.warning('Exception:'+repr(e))
-
     def handleClose(self):
         global logger
         wallets.pop(self)
         logger.info(self.address + 'closed')
 
+    # UTILS #
+    def pubkey_to_ethereum_address(self, pubkey:bytes)-> str:
+        """
+        Get address from a public key
+        """
+        size= len(pubkey)
+        if size<64 or size>65:
+            addr= f"Unexpected pubkey size {size}, should be 64 or 65 bytes"
+            return addr
+            #raise Exception(f"Unexpected pubkey size{size}, should be 64 or 65 bytes")
+        if size== 65:
+            pubkey= pubkey[1:]
+
+        pubkey_hash= keccak(pubkey)
+        pubkey_hash= pubkey_hash[-20:]
+        addr= "0x" + pubkey_hash.hex()
+        return addr
+
+    def msgtohash(self, msg_bytes: bytes) -> bytes:
+        msg_length = str(len(msg_bytes)).encode('utf-8')
+        msg_encoded= b'\x19Ethereum Signed Message:\n' + msg_length + msg_bytes
+        msg_hash= keccak(msg_encoded)
+        return msg_hash
+
+    def normalize(self, ins):
+        ''' Normalize input
+            For strings, remove any 'Ox' prefix, and ensure that number of chars is even
+        '''
+        if type(ins) is str:
+            out= ins.replace("0x", "")
+            if len(out)%2 == 1:
+                out= "0" + out
+            #logger.info("in normalize: " +str(ins) +  " "  + str(out)) # debug tmp
+            return out
+        return ins
+
+
+class Transaction(rlp.Serializable):
+    fields = [
+        ("nonce", big_endian_int),
+        ("gas_price", big_endian_int),
+        ("gas", big_endian_int),
+        ("to", Binary.fixed_length(20, allow_empty=True)),
+        ("value", big_endian_int),
+        ("data", binary),
+        ("v", big_endian_int),
+        ("r", big_endian_int),
+        ("s", big_endian_int),
+    ]
+
+# https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1559.md
+# 0x02 || rlp([chain_id, nonce, max_priority_fee_per_gas, max_fee_per_gas, gas_limit, destination, amount, data, access_list, signature_y_parity, signature_r, signature_s])
+# https://github.com/ethereum/py-evm/blob/master/eth/vm/forks/london/transactions.py
+class AccountAccesses(rlp.Serializable):
+    fields = [
+        ('account', Binary.fixed_length(20, allow_empty=True)),
+        ('storage_keys', CountableList(BigEndianInt(32))),
+    ]
+
+class TransactionEIP1559(rlp.Serializable):
+    fields = [
+        ("chain_id", big_endian_int),
+        ("nonce", big_endian_int),
+        ("max_priority_fee_per_gas", big_endian_int),
+        ("max_fee_per_gas", big_endian_int),
+        ("gas", big_endian_int),
+        ("to", Binary.fixed_length(20, allow_empty=True)),
+        ("value", big_endian_int),
+        ("data", binary),
+        ("access_list", CountableList(AccountAccesses)),
+    ]
 
 def my_threaded_func(server):
     server.serveforever()
