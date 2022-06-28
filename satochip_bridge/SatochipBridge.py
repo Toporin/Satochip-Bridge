@@ -108,83 +108,158 @@ class SatochipBridge(WebSocket):
             elif (action=="sign_tx_hash"):
                 # only for EVM compatible blockchains
                 path= msg["path"]
-                tx=  msg["txDict"]
-                hash= msg["hash"]
-                logger.debug(f"sign_tx_hash: tx= {tx}")
-                logger.debug(f"sign_tx_hash: hash= {hash}")
-                # parse tx
-                from_= tx['from']
-                value= tx['value']
-                data= tx['data']
-                nonce= tx['nonce']
-                gas= tx['gasLimit']
-                to= tx.get('to', "")
-                if to is None: # for contract deployment
-                    to=''
-                chainId= tx.get('chainId', 3) # ropsten by default, for security
+                #tx=  msg["txDict"]
+                hash= msg["hash"] # unused
+                # logger.debug(f"sign_tx_hash: tx= {tx}")
+                # logger.debug(f"sign_tx_hash: hash= {hash}")
 
-                # Parse tx for display
-                # Legacy, EIP 1559
-                type_= tx.get('type', None)
-                if (type_ is None or type_== 0): # legacy
-                    # parse gasPrice
-                    gasPrice= tx['gasPrice']
-                    tx_txt= f"Legacy transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nGas price: {gasPrice} \nData: {data} \nNonce: {nonce}"
+                # DEBUG
+                # decode tx
+                tx=  msg["tx"]
+                tx_bytes= bytes.fromhex(tx)
+                tx_dic=  msg["txDict"] # unused...
+                tx_chainid= msg.get("chainId", 3) # default to Ropsten
+                try:
+                    tx_from= '0x'+msg['from']
+                except Exception as ex:
+                    tx_from= '(not supported)'
+                # parse eth tx type
+                tx_firstbyte= tx_bytes[0]
+                if 0xc0 <= tx_firstbyte <= 0xfe:
+                    tx_type= 0
+                    txrlp= rlp.decode(tx_bytes, Transaction)
+                    tx_nonce= txrlp.nonce
+                    tx_gas= txrlp.gas
+                    tx_gas_price=txrlp.gas_price
+                    tx_to='0x'+txrlp.to.hex()
+                    tx_value= txrlp.value
+                    tx_data='0x'+ txrlp.data.hex()
+                    tx_chainid= msg.get('chainId',  txrlp.v)
+                    # reencode with chainId (EIP155)
+                    tx2= Transaction(txrlp.nonce, txrlp.gas_price, txrlp.gas, txrlp.to, txrlp.value, txrlp.data, tx_chainid, 0, 0)
+                    tx2_raw= rlp.encode(tx2)
+                    print("tx2_raw: " + tx2_raw.hex())
+                    tx_hash = keccak(tx2_raw)
+                    # for display
+                    tx_txt= f"Legacy transaction: \nTo: {tx_to} \nValue: {tx_value} \nGas: {tx_gas} \nGas price: {tx_gas_price} \nData: {tx_data} \nNonce: {tx_nonce}"
 
-                elif type_==2: # eip1559
-                    maxPriorityFeePerGas= tx['maxPriorityFeePerGas']
-                    maxFeePerGas= tx['maxFeePerGas']
-                    accessList= tx['accessList'] # TODO
-                    logger.info(f"tx['accessList']= {tx['accessList']}")
-                    tx_txt= f"EIP1559 transaction: \nTo: {to} \nValue: {value} \nGas: {gas} \nMaxFeePerGas: {maxFeePerGas} \nMaxPriorityFeePerGas: {maxPriorityFeePerGas} \nData: {data} \nNonce: {nonce} \nAccessList: {accessList}"
+                elif tx_firstbyte== 0x2:
+                    tx_type= 0x2
+                    try:
+                        txrlp= rlp.decode(tx_bytes[1:], TransactionEIP1559Signed)
+                    except Exception as ex:
+                        txrlp= rlp.decode(tx_bytes[1:], TransactionEIP1559)
+                    tx_nonce= txrlp.nonce
+                    tx_gas= txrlp.gas
+                    tx_to='0x'+txrlp.to.hex()
+                    tx_value= txrlp.value
+                    tx_data='0x'+ txrlp.data.hex()
+                    tx_chainid= msg.get('chainId',  txrlp.chain_id)
+                    tx_max_priority_fee_per_gas= txrlp.max_priority_fee_per_gas
+                    tx_max_fee_per_gas= txrlp.max_fee_per_gas
+                    tx_access_list= txrlp.access_list
+                    # compute hash
+                    tx_obj= TransactionEIP1559(
+                                chain_id= tx_chainid,
+                                nonce= txrlp.nonce,
+                                max_priority_fee_per_gas= txrlp.max_priority_fee_per_gas,
+                                max_fee_per_gas= txrlp.max_fee_per_gas,
+                                gas= txrlp.gas,
+                                to= txrlp.to,
+                                value= txrlp.value,
+                                data= txrlp.data,
+                                access_list= txrlp.access_list
+                            )
+                    tx_bytes= bytes([2]) + rlp.encode(tx_obj)
+                    tx_hash = keccak(tx_bytes)
+                    # for displaye
+                    tx_txt= f"EIP1559 transaction: \nTo: {tx_to} \nValue: {tx_value} \nGas: {tx_gas} \nMaxFeePerGas: {tx_max_fee_per_gas} \nMaxPriorityFeePerGas: {tx_max_priority_fee_per_gas} \nData: {tx_data} \nNonce: {tx_nonce} \nAccessList: {tx_access_list}"
 
                 else:
                     d= {'requestID':msg["requestID"], 'action':msg["action"],
                         'exitstatus':EXIT_FAILURE, 'reason':'unsupported transaction type'}
-                    msg_error= f"Transaction request rejected! Error: unsupported transaction type: {type_}"
+                    msg_error= f"Transaction request rejected! Error: unsupported transaction type: {tx_firstbyte}"
                     logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
                     cc.client.request('show_error', msg_error)
                     return
 
+                logger.info(f"sign_tx_hash: - tx_bytes= {tx_bytes.hex()}")
+                logger.info(f"sign_tx_hash - tx_hash= {tx_hash.hex()}")
+
+                # ENDBUG
+                # parse tx
+                # tx_from= tx['from']
+                # tx_value= tx['value']
+                # tx_data= tx['data']
+                # tx_nonce= tx['nonce']
+                # tx_gas= tx['gasLimit']
+                # tx_to= tx.get('to', "")
+                # if tx_to is None: # for contract deployment
+                #     tx_to=''
+                # tx_chainid= tx.get('chainId', 3) # ropsten by default, for security
+
+                # Parse tx for display
+                # Legacy, EIP 1559
+                # tx_type= tx.get('type', None)
+                # if (tx_type is None or tx_type== 0): # legacy
+                #     # parse gasPrice
+                #     gasPrice= tx['gasPrice']
+                #     tx_txt= f"Legacy transaction: \nTo: {tx_to} \nValue: {tx_value} \nGas: {tx_gas} \nGas price: {gasPrice} \nData: {tx_data} \nNonce: {tx_nonce}"
+                #
+                # elif tx_type==2: # eip1559
+                #     maxPriorityFeePerGas= tx['maxPriorityFeePerGas']
+                #     maxFeePerGas= tx['maxFeePerGas']
+                #     accessList= tx['accessList'] # TODO
+                #     logger.info(f"tx['accessList']= {tx['accessList']}")
+                #     tx_txt= f"EIP1559 transaction: \nTo: {tx_to} \nValue: {tx_value} \nGas: {tx_gas} \nMaxFeePerGas: {maxFeePerGas} \nMaxPriorityFeePerGas: {maxPriorityFeePerGas} \nData: {tx_data} \nNonce: {tx_nonce} \nAccessList: {accessList}"
+                #
+                # else:
+                #     d= {'requestID':msg["requestID"], 'action':msg["action"],
+                #         'exitstatus':EXIT_FAILURE, 'reason':'unsupported transaction type'}
+                #     msg_error= f"Transaction request rejected! Error: unsupported transaction type: {tx_type}"
+                #     logger.warning(f"CALLBACK: error in processTransaction: {msg_error}")
+                #     cc.client.request('show_error', msg_error)
+                #     return
+
                 # request user approval via GUI
                 hmac= None
                 is_approved= False
-                (event, values)= cc.client.request('satochip_approve_action', "sign transaction", from_, chainId, tx_txt)
+                (event, values)= cc.client.request('satochip_approve_action', "sign transaction", tx_from, tx_chainid, tx_txt)
                 if event== 'Yes':
                     is_approved= True
 
-                # compute tx hash
-                if (type_ is None or type_== 0): # legacy
-                    tx_obj= Transaction( # EIP155
-                        nonce= int(nonce, 16),
-                        gas_price=int(gasPrice, 16),
-                        gas= int(gas, 16),
-                        to= bytes.fromhex(self.normalize(to)),
-                        value= int(value, 16),
-                        data= bytes.fromhex(self.normalize(data)),
-                        v= chainId,
-                        r=0,
-                        s=0,
-                    )
-                    tx_bytes= rlp.encode(tx_obj)
+                # # compute tx hash
+                # if (tx_type is None or tx_type== 0): # legacy
+                #     tx_obj= Transaction( # EIP155
+                #         nonce= int(tx_nonce, 16),
+                #         gas_price=int(gasPrice, 16),
+                #         gas= int(tx_gas, 16),
+                #         to= bytes.fromhex(self.normalize(tx_to)),
+                #         value= int(tx_value, 16),
+                #         data= bytes.fromhex(self.normalize(tx_data)),
+                #         v= tx_chainid,
+                #         r=0,
+                #         s=0,
+                #     )
+                #     tx_bytes= rlp.encode(tx_obj)
+                #
+                # elif tx_type==2: # eip1559
+                #     tx_obj= TransactionEIP1559(
+                #         chain_id= tx_chainid,
+                #         nonce= int(tx_nonce, 16),
+                #         max_priority_fee_per_gas=int(maxPriorityFeePerGas, 16),
+                #         max_fee_per_gas=int(maxFeePerGas, 16),
+                #         gas= int(tx_gas, 16),
+                #         to= bytes.fromhex(self.normalize(tx_to)),
+                #         value= int(tx_value, 16),
+                #         data= bytes.fromhex(self.normalize(tx_data)),
+                #         access_list= accessList # TODO: parse accessList
+                #     )
+                #     tx_bytes= bytes([2]) + rlp.encode(tx_obj)
 
-                elif type_==2: # eip1559
-                    tx_obj= TransactionEIP1559(
-                        chain_id= chainId,
-                        nonce= int(nonce, 16),
-                        max_priority_fee_per_gas=int(maxPriorityFeePerGas, 16),
-                        max_fee_per_gas=int(maxFeePerGas, 16),
-                        gas= int(gas, 16),
-                        to= bytes.fromhex(self.normalize(to)),
-                        value= int(value, 16),
-                        data= bytes.fromhex(self.normalize(data)),
-                        access_list= accessList # TODO: parse accessList
-                    )
-                    tx_bytes= bytes([2]) + rlp.encode(tx_obj)
-
-                tx_hash= keccak(tx_bytes)
-                logger.info(f"sign_tx_hash: - tx_bytes= {tx_bytes.hex()}")
-                logger.info(f"sign_tx_hash - tx_hash= {tx_hash.hex()}")
+                # tx_hash= keccak(tx_bytes)
+                # logger.info(f"sign_tx_hash: - tx_bytes= {tx_bytes.hex()}")
+                # logger.info(f"sign_tx_hash - tx_hash= {tx_hash.hex()}")
 
                 # 2FA approval if enabled
                 if cc.needs_2FA:
@@ -194,9 +269,9 @@ class SatochipBridge(WebSocket):
                     msg2FA['action']= "sign_tx_hash"
                     msg2FA['tx']= tx_bytes.hex()
                     msg2FA['hash']= tx_hash.hex()
-                    msg2FA['from']= from_
+                    msg2FA['from']= tx_from
                     msg2FA['chain']= "EVM"
-                    msg2FA['chainId']= chainId # optionnal, otherwise taken from tx deserialization...
+                    msg2FA['chainId']= tx_chainid # optionnal, otherwise taken from tx deserialization...
                     (is_approved, hmac)= Sato2FA.do_challenge_response(client, msg2FA)
 
                 if not is_approved:
@@ -240,15 +315,13 @@ class SatochipBridge(WebSocket):
                     return
 
                 except Exception as ex:
-                    #TODO
                     logger.warning(f"Sign_tx_hash exception: {ex}")
                     d= {'requestID':msg["requestID"], 'action':msg["action"],
-                        "sig":71*'00', "r":32*'00', "s":32*'00', "v":0 , "pubkey":pubkey.get_public_key_bytes().hex(),
                         'exitstatus':EXIT_FAILURE, 'reason':'exception during signature'}
                     reply= json.dumps(d)
                     self.sendMessage(reply)
                     logger.debug("Reply: "+reply)
-                    cc.client.request('show_error', 'Failed to approve transaction! \n\nError:{ex}')
+                    cc.client.request('show_error', f'Failed to approve transaction! \n\nError:{ex}')
                     return
 
             elif (action=="sign_msg_hash"):
@@ -535,6 +608,22 @@ class TransactionEIP1559(rlp.Serializable):
         ("value", big_endian_int),
         ("data", binary),
         ("access_list", CountableList(AccountAccesses)),
+    ]
+
+class TransactionEIP1559Signed(rlp.Serializable):
+    fields = [
+        ('chain_id', big_endian_int),
+        ('nonce', big_endian_int),
+        ('max_priority_fee_per_gas', big_endian_int),
+        ('max_fee_per_gas', big_endian_int),
+        ('gas', big_endian_int),
+        ('to', Binary.fixed_length(20, allow_empty=True)),
+        ('value', big_endian_int),
+        ('data', binary),
+        ('access_list', CountableList(AccountAccesses)),
+        ('y_parity', big_endian_int),
+        ('r', big_endian_int),
+        ('s', big_endian_int),
     ]
 
 def my_threaded_func(server):
