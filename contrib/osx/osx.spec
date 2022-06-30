@@ -30,7 +30,7 @@ hiddenimports += collect_submodules('websocket') # needed?
 datas = [
     (electrum + PYPKG + '/*.png', PYPKG),
     (electrum + PYPKG + '/*.ico', PYPKG),
-    (electrum + PYPKG + '/api_keys.ini', PYPKG),
+    (electrum + PYPKG + '/*.ini', PYPKG),
 ]
 datas += collect_data_files('pysatochip')
 
