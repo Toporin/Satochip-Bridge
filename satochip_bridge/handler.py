@@ -2,8 +2,8 @@
 #import PySimpleGUIWx as sg
 import sys
 if sys.platform == "darwin": #MacOS
-    import PySimpleGUI as sg
-    #import PySimpleGUIQt as sg
+    #import PySimpleGUI as sg
+    import PySimpleGUIQt as sg
 else:
     import PySimpleGUIQt as sg
 import base64
