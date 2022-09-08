@@ -549,7 +549,6 @@ class HandlerSimpleGUI:
         else:
             initial_network= hex(chain_id)
             networks= [hex(chain_id)] + list(NETWORK_DICT.values())
-        #initial_network= NETWORK_DICT.get(chain_id, hex(chain_id)) #NETWORK_DICT[chain_id]
         layout = [
             [sg.Text("An app wants to perform the following on your Satochip via WalletConnect:")],
             [sg.Text(f"Action: {action}")],
@@ -568,8 +567,11 @@ class HandlerSimpleGUI:
         return (event, values)
 
     def satochip_approve_action(self, action, address, chain_id, data):
-        network= NETWORK_DICT.get(chain_id, hex(chain_id)) #NETWORK_DICT[chain_id]
         logger.debug('In satochip_approve_action')
+        if chain_id in NETWORK_DICT:
+            network= NETWORK_DICT.get(chain_id)
+        else:
+            network= hex(chain_id)
         layout = [
             [sg.Text("An app wants to perform the following on your Satochip:")],
             [sg.Text(f"Action: {action}")],

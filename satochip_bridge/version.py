@@ -13,4 +13,5 @@
 # v0.3.2: Add menu to generate QR code from 2FA secret in 2FA options
 # v0.4.0: Add WalletConnect support (beta)
 # v0.5.0: upgrade eth-satochip-keyring support (EIP712 & EIP1559) and improve UI
-SATOCHIP_BRIDGE_VERSION = '0.5.0' # version of the client package
+# v0.5.1: fix various bugs 
+SATOCHIP_BRIDGE_VERSION = '0.5.1' # version of the client package

@@ -134,8 +134,8 @@ class WCCallback:
                     typed_data= json_data
                 try:
                     logger.warning(f"CALLBACK: in onEthSign typed_data= {typed_data}")
-                    chainId= int(typedData.get('domain').get('chainId', 3)) # ropsten by default for security
-                    typedData['domain']['chainId']= chainId
+                    chainId= int(typed_data.get('domain').get('chainId', 3)) # ropsten by default for security
+                    typed_data['domain']['chainId']= chainId
                     msg_hash= eip712.encoding.encode_typed_data(typed_data)
                 except Exception as ex:
                     # fallback: use domainSeparatorHex & hashStructMessageHex hashes for blind Signing
@@ -153,7 +153,7 @@ class WCCallback:
                 self.wc_client.rejectRequest(id_)
                 msg_error= f"Request to sign typed message rejected! \n\nFailed to parse typedData with error: {ex}"
                 logger.warning(f"CALLBACK: exception in onEthSign: {msg_error}")
-                self.sato_handler.show_error(msg_error)
+                self.sato_client.request('show_error', msg_error)
                 return
 
         logger.info(f"CALLBACK: onEthSign - msg_raw= {msg_raw}")
@@ -213,7 +213,7 @@ class WCCallback:
                 self.wc_client.rejectRequest(id_)
                 msg_error= f"Failed to sign message! \n\nError: {ex}"
                 logger.warning(f"CALLBACK: exception in onEthSign: {msg_error}")
-                self.sato_handler.show_error(msg_error)
+                self.sato_client.request('show_error', msg_error)
         else:
             self.wc_client.rejectRequest(id_)
             logger.info(f"CALLBACK Approve signature? NO!")
@@ -245,7 +245,10 @@ class WCCallback:
         logger.info(f"CALLBACK: action= {action}")
         # parse tx
         from_= param.from_
-        value= param.value
+        if param.value is not None:
+            value= param.value
+        else:
+            value= "0x0"
         data= param.data
         if param.to is not None:
             to= param.to
@@ -341,8 +344,11 @@ class WCCallback:
             (event, values)= self.sato_client.request('wallet_connect_approve_action', "sign transaction", from_, chainId, tx_txt)
             if event== 'Yes':
                 # check chainId: if user changed the network, it will be reflected in the tx to sign
-                new_network= values["network"]
-                new_chainId= CHAINID_DICT.get(new_network, int(new_network, 16)) # new_network can be hexstring if not listed in NETWORK_DICT
+                new_network= values["network"] # either a network such as "Ethereum" or a hex string for unknown networks
+                if new_network in CHAINID_DICT.keys():
+                    new_chainId= CHAINID_DICT.get(new_network)
+                else:
+                    new_chainId= int(new_network, 16)
                 if (new_chainId != chainId):
                     logger.info(f"CALLBACK changed chainId from {hex(chainId)} to {hex(new_chainId)}")
                     chainId= new_chainId
