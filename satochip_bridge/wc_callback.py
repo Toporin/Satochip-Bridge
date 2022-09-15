@@ -136,6 +136,7 @@ class WCCallback:
                     logger.warning(f"CALLBACK: in onEthSign typed_data= {typed_data}")
                     chainId= int(typed_data.get('domain').get('chainId', 3)) # ropsten by default for security
                     typed_data['domain']['chainId']= chainId
+                    self.sanitizeTypedData(typed_data)
                     msg_hash= eip712.encoding.encode_typed_data(typed_data)
                 except Exception as ex:
                     # fallback: use domainSeparatorHex & hashStructMessageHex hashes for blind Signing
@@ -231,6 +232,70 @@ class WCCallback:
             #logger.info("in normalize: " +str(ins) +  " "  + str(out)) # debug tmp
             return out
         return ins
+
+    def sanitizeTypedData(self, typedData):
+        ''' Sanitize TypedData input for EIP712 (very basic check)
+            Check that values provided correspond to the type specified (for atomic types uint, int, bytes)
+            For example, if type is uint256 but '1' is provided, convert to uint
+            Based on https://github.com/rmeissner/py-eth-sig-utils/blob/master/py_eth_sig_utils/eip712/encoding.py
+        '''
+
+        # subroutine1
+        def encode_value(dataType, dataName, data, types):
+            value= data[dataName]
+            if (dataType == 'string'):
+                pass
+            elif (dataType == 'bytes'):
+                pass
+            elif (types.get(dataType)):
+                encode_data(dataType, value, types)
+            elif (dataType.endswith("]")): # for lists
+                arrayType = dataType[:dataType.index("[")]
+                # for arrayValue in value:
+                #     encode_data(arrayType, arrayValue, types)
+                for i, arrayValue in enumerate(value):
+                    if isinstance(arrayValue, dict):
+                        encode_data(arrayType, arrayValue, types)
+                    elif (dataType.startswith("uint") or dataType.startswith("int")) and isinstance(arrayValue, str):
+                        logger.info(f"sanitizeTypedData(): in encode_value: convert string to int!")
+                        arrayValue= int(arrayValue)
+                        data[dataName][i]= arrayValue
+                    elif (dataType.startswith("bytes")) and isinstance(arrayValue, str):
+                        logger.info(f"sanitizeTypedData(): in encode_value: convert string to bytes!")
+                        if arrayValue.startswith("0x"):
+                            arrayValue= arrayValue[2:]
+                        arrayValue= bytes.fromhex(arrayValue)
+                        data[dataName][i]= arrayValue
+            else:
+                if (dataType.startswith("uint") or dataType.startswith("int")) and isinstance(value, str):
+                    logger.info(f"sanitizeTypedData(): in encode_value: convert string to int!")
+                    value= int(value)
+                    data[dataName]= value
+                if (dataType.startswith("bytes")) and isinstance(value, str):
+                    logger.info(f"sanitizeTypedData(): in encode_value: convert string to bytes!")
+                    if value.startswith("0x"):
+                        value= value[2:]
+                    value= bytes.fromhex(value)
+                    data[dataName]= value
+
+        # subroutine2
+        def encode_data(name, data, types):
+            if name in types:
+                for schemaType in types[name]:
+                    encode_value(schemaType['type'], schemaType['name'], data, types)
+
+        types = typedData.get("types")
+        assert types
+        domainSchema = types.get("EIP712Domain")
+        assert domainSchema and type(domainSchema) is list
+        primaryType = typedData.get("primaryType")
+        assert primaryType
+        domain = typedData.get("domain")
+        assert domain
+        message = typedData.get("message")
+        assert message
+        domainHash = encode_data("EIP712Domain", domain, types)
+        messageHash = encode_data(primaryType, message, types)
 
     def onEthSignTransaction(self, id_, param: WCEthereumTransaction):
         logger.info("CALLBACK: onEthSignTransaction")
