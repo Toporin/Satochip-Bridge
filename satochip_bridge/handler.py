@@ -1067,7 +1067,8 @@ class HandlerSimpleGUI:
                                             [sg.Text('Firmware Version: ', size=(20, 1)), sg.Text(fw_rel)],
                                             [sg.Text('Wallet is seeded: ', size=(20, 1)), sg.Text(is_seeded)],
                                             [sg.Text('Requires 2FA: ', size=(20, 1)), sg.Text(needs_2FA)],
-                                            [sg.Text('Uses Secure Channel: ', size=(20, 1)), sg.Text(needs_SC)]]
+                                            [sg.Text('Uses Secure Channel: ', size=(20, 1)), sg.Text(needs_SC)],
+                                            [sg.Button('Verify Card', key='verify_card', size= (20,1))]]
                 frame_layout2= [[sg.Text('Satochip-Bridge version: ', size=(20, 1)), sg.Text(SATOCHIP_BRIDGE_VERSION)],
                                             [sg.Text('Pysatochip version: ', size=(20, 1)), sg.Text(PYSATOCHIP_VERSION)],
                                             [sg.Text(msg_status, justification='center', relief=sg.RELIEF_SUNKEN)]]
@@ -1078,7 +1079,41 @@ class HandlerSimpleGUI:
                               [sg.Button('Ok')]]
 
                 window = sg.Window('Satochip-Bridge: About', layout, icon=self.satochip_icon)
-                event, value = window.read()
+                # event, value = window.read()
+                while True:
+                    event, values = window.read()
+                    if event== 'verify_card':
+                        is_authentic, txt_ca, txt_subca, txt_device, txt_error = self.client.card_verify_authenticity()
+                        if is_authentic:
+                            txt_result= 'Device authenticated successfully!'
+                            txt_color= 'green'
+                        else:
+                            txt_result= ''.join(['Error: could not authenticate the issuer of this card! \n',
+                                                        'Reason: ', txt_error , '\n\n',
+                                                        'If you did not load the card yourself, be extremely careful! \n',
+                                                        'Contact support(at)satochip.io to report a suspicious device.'])
+                            txt_color= 'red'
+
+                        text_cert_chain= 32*"="+" Root CA certificate: "+32*"="+"\n"
+                        text_cert_chain+= txt_ca
+                        text_cert_chain+= "\n"+32*"="+" Sub CA certificate: "+32*"="+"\n"
+                        text_cert_chain+= txt_subca
+                        text_cert_chain+= "\n"+32*"="+" Device certificate: "+32*"="+"\n"
+                        text_cert_chain+= txt_device
+
+                        layout2 = [
+                                  [sg.Text(txt_result, text_color= txt_color)],
+                                  [sg.Multiline(text_cert_chain, key='text_cert_chain', size=(80,20), visible=True)],
+                                  [sg.Button('Ok')],
+                                ]
+                        window2 = sg.Window('SeedKeeperTool certificate chain validation', layout2, icon=self.satochip_icon, finalize=True)  #ok
+                        event2, values2 = window2.read()
+                        window2.close()
+                        del window2
+
+                    elif event=='Ok' or event=='Cancel' or event==None:
+                        break
+
                 window.close()
                 del window
                 continue

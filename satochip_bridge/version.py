@@ -15,4 +15,5 @@
 # v0.5.0: upgrade eth-satochip-keyring support (EIP712 & EIP1559) and improve UI
 # v0.5.1: fix various bugs
 # v0.5.2: sanitize EIP712 message signature (check inputs)
-SATOCHIP_BRIDGE_VERSION = '0.5.2' # version of the client package
+# v0.5.3: check card certificate in about menu
+SATOCHIP_BRIDGE_VERSION = '0.5.3' # version of the client package
