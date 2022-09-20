@@ -37,7 +37,7 @@ setup(
         'satochip_bridge': 'satochip_bridge'
     },
     package_data={
-        'satochip_bridge': ['*.png', '*.ico'],
+        'satochip_bridge': ['*.ini', '*.png', '*.ico'],
     },
 
     scripts=['satochip_bridge/SatochipBridge.py'],

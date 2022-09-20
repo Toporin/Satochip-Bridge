@@ -1,7 +1,10 @@
 satochip_bridge/__pycache__/
 satochip_bridge/satochip_bridge.ini
+satochip_bridge/api_keys.ini
 .venv/
 dist/
+build/
+*.egg-info/
 contrib/build-linux/appimage/build/
 contrib/build-linux/appimage/.cache/
 contrib/build-wine/.cache/
@@ -13,3 +16,8 @@ contrib/build-windows/dist/
 contrib/build-windows/build/
 contrib/build-windows/__pycache__/
 contrib/build-windows/*.spec
+
+.DS_Store
+contrib/osx/.DS_Store
+contrib/osx/.cache/
+contrib/osx/build-venv/
