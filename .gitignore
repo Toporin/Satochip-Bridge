@@ -16,3 +16,8 @@ contrib/build-windows/dist/
 contrib/build-windows/build/
 contrib/build-windows/__pycache__/
 contrib/build-windows/*.spec
+
+.DS_Store
+contrib/osx/.DS_Store
+contrib/osx/.cache/
+contrib/osx/build-venv/

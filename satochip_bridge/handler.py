@@ -1,11 +1,15 @@
 #import PySimpleGUI as sg
 #import PySimpleGUIWx as sg
-import PySimpleGUIQt as sg
+import sys
+if sys.platform == "darwin": #MacOS
+    import PySimpleGUI as sg
+    #import PySimpleGUIQt as sg
+else:
+    import PySimpleGUIQt as sg
 import base64
 import getpass
 import pyperclip
 #from pyperclip import PyperclipException
-import sys
 import os
 import logging
 import re
@@ -692,15 +696,33 @@ class HandlerSimpleGUI:
                                                             '&Close WalletConnect',
                                                             '&About',
                                                             '&Quit']]
-        if card_present:
-            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_icon)
+        
+        if sys.platform == "darwin": #MacOS
+            layout = [[sg.Text('Welcome to Satochip-Bridge!')],  
+                        [sg.Button('Setup new Satochip', size= (40,1)) ],
+                        [sg.Button('Change PIN', size= (40,1)) ],
+                        [sg.Button('Reset seed', size= (40,1)) ],
+                        [sg.Button('2FA options', size= (40,1)) ],
+                        [sg.Button('Start WalletConnect', size= (40,1)) ],
+                        [sg.Button('Close WalletConnect', size= (40,1)) ],
+                        [sg.Button('About', size= (40,1)) ],
+                        [sg.Button('Quit', size= (40,1)) ],
+                       ]      
+            main_window = sg.Window('Satochip-Bridge', layout, icon=self.satochip_icon).Finalize()
         else:
-            self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_unpaired_icon)
+            if card_present:
+                self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_icon)
+            else:
+                self.tray = sg.SystemTray(menu=self.menu_def, filename=self.satochip_unpaired_icon)
 
         while True:
-            menu_item = self.tray.Read(timeout=1)
-            if menu_item != '__TIMEOUT__':
-                logger.debug('Menu item: '+menu_item)
+
+            if sys.platform == "darwin": #MacOS
+                menu_item, values = main_window.read() 
+            else:
+                menu_item = self.tray.Read(timeout=1)
+                if menu_item != '__TIMEOUT__':
+                   logger.debug('Menu item: '+menu_item)
 
             ## Setup new Satochip ##
             if menu_item== 'Setup new Satochip':
