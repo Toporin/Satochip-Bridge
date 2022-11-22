@@ -24,4 +24,4 @@ py-eth-sig-utils==0.4.0 # for eip712 signatures
 PySimpleGUI==4.60.1
 #PySimpleGUIQt==0.31.0
 #PySide2 #==5.12.6 #5.14.2 # <= 5.15.0
-pillow == 8.0.1 #8.4.0
+pillow == 9.3.0 #8.4.0
