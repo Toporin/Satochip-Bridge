@@ -17,9 +17,9 @@ shiboken2==5.14.1 \
     --hash=sha256:da8ee5fc65e41b542bf50eec2db57e707255d09c460cce62c0ff12a63e3bd2c6 \
     --hash=sha256:f6f119353d4861dee3f28962a80830ca3bf68509f0c89a9d779cd3cb90702091 \
     # via -r binaries.txt, pyside2
-setuptools==41.0.1 \
-    --hash=sha256:a222d126f5471598053c9a77f4b5d4f26eaa1f150ad6e01dcf1a42e185d05613 \
-    --hash=sha256:c7769ce668c7a333d84e17fe8b524b1c45e7ee9f7908ad0a73e1eda7e6a5aebf
+setuptools==65.5.1 \
+    --hash=sha256:d0b9a8433464d5800cbe05094acf5c6d52a91bfac9b52bcfc4d41382be5d5d31 \
+    --hash=sha256:e197a19aa8ec9722928f2206f8de752def0e4c9fc6953527360d1c36d94ddb2f
 wheel==0.33.4 \
     --hash=sha256:5e79117472686ac0c4aef5bad5172ea73a1c2d1646b808c35926bd26bdfb0c08 \
     --hash=sha256:62fcfa03d45b5b722539ccbc07b190e4bfff4bb9e3a4d470dd9f6a0981002565
