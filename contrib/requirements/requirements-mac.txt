@@ -6,7 +6,7 @@ ecdsa==0.15
 SimpleWebSocketServer==0.1.1
 pyscard==2.0.1
 pysatochip==0.12.3
-cryptography==3.3.2
+cryptography==39.0.1
 pykson>=0.9.9.8.7
 pywalletconnectv1==0.1.1
 requests==2.23.0
