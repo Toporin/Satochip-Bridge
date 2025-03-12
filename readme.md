@@ -1,3 +1,5 @@
+**Warning: Satochip-Bridge has been deprecated as of November 2024. You should use the new [Satochip-Utils application](https://github.com/Toporin/Satochip-Utils) instead to easily manage and use your Satochip, Seedkeeper and Satodime cards. To use the WallectConnect functionality, you can use [Uniblow Wallet](https://uniblow.org/) with Satochip.**
+
 # Satochip-Bridge
 
 This python tool acts as a midleware between a wallet client and a Satochip connected to a card reader. 
